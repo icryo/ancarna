@@ -1,0 +1,146 @@
+[package]
+name = "ancarna"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+authors = ["Ancarna Contributors"]
+description = "Web Proxy Security in Your Terminal"
+license = "MIT"
+repository = "https://github.com/icryo/ancarna"
+keywords = ["security", "penetration-testing", "proxy", "tui", "owasp"]
+categories = ["command-line-utilities", "development-tools"]
+
+[dependencies]
+# ═══════════════════════════════════════════════════════════════════════════════
+# System
+# ═══════════════════════════════════════════════════════════════════════════════
+libc = "0.2"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TUI Framework
+# ═══════════════════════════════════════════════════════════════════════════════
+ratatui = "0.30"
+crossterm = "0.28"
+tui-textarea = "0.7"
+tui-tree-widget = "0.23"
+throbber-widgets-tui = "0.8"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HTTP Client & Networking
+# ═══════════════════════════════════════════════════════════════════════════════
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls",
+    "cookies",
+    "json",
+    "multipart",
+    "gzip",
+    "brotli",
+    "deflate",
+    "stream",
+] }
+reqwest-middleware = "0.4"
+hyper = { version = "1.5", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
+http-body-util = "0.1"
+tower = { version = "0.5", features = ["full"] }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TLS & Certificates (for MITM proxy)
+# ═══════════════════════════════════════════════════════════════════════════════
+rustls = { version = "0.23", features = ["ring"] }
+rustls-pemfile = "2.2"
+rcgen = { version = "0.13", features = ["ring"] }
+tokio-rustls = { version = "0.26", features = ["ring"] }
+webpki-roots = "0.26"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Async Runtime
+# ═══════════════════════════════════════════════════════════════════════════════
+tokio = { version = "1.42", features = ["full"] }
+futures = "0.3"
+async-trait = "0.1"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Serialization & Data Formats
+# ═══════════════════════════════════════════════════════════════════════════════
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+toml = "0.8"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Parsing & Processing
+# ═══════════════════════════════════════════════════════════════════════════════
+url = "2.5"
+ipnet = "2"
+regex = "1.11"
+scraper = "0.22"
+html5ever = "0.29"
+syntect = "5.2"
+jsonxf = "1.1"
+hex = "0.4"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Scripting Engine
+# ═══════════════════════════════════════════════════════════════════════════════
+boa_engine = "0.19"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Import/Export Formats
+# ═══════════════════════════════════════════════════════════════════════════════
+# parse_postman_collection = "0.2"  # Add when available
+# curl-parser = "0.6"               # Add when available
+openapiv3 = "2.0"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Authentication & Cryptography
+# ═══════════════════════════════════════════════════════════════════════════════
+jsonwebtoken = "9.3"
+base64 = "0.22"
+digest_auth = "0.3"
+hmac = "0.12"
+sha2 = "0.10"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Utilities
+# ═══════════════════════════════════════════════════════════════════════════════
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.11", features = ["v4", "serde"] }
+thiserror = "2.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
+clap = { version = "4.5", features = ["derive", "env"] }
+directories = "5.0"
+parking_lot = "0.12"
+once_cell = "1.20"
+bytes = "1.9"
+urlencoding = "2.1"
+md5 = "0.7"
+arboard = "3.4"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# WebSocket Support
+# ═══════════════════════════════════════════════════════════════════════════════
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+
+
+[dev-dependencies]
+pretty_assertions = "1.4"
+wiremock = "0.6"
+tempfile = "3.14"
+tokio-test = "0.4"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+opt-level = 0
+
+[features]
+default = []
+headless-browser = []  # Future: for AJAX spider

@@ -1,0 +1,42 @@
+# Build artifacts
+/target/
+**/*.rs.bk
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# AI/Editor tools
+.claude/
+.cursor/
+.copilot/
+
+# Ancarna data
+*.ancarna
+*.session
+ca.crt
+ca.key
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+
+# Test artifacts
+*.har
+*.postman_collection.json
+
+# Generated content
+/recon_screenshots/
+
+# User payloads (keep built-in payloads in code)
+/payloads/custom/

@@ -1,0 +1,85 @@
+# Ancarna Default Configuration
+
+[general]
+# Default workspace directory (optional)
+# workspace_dir = "~/.ancarna/workspace"
+
+# Auto-save interval in seconds (0 to disable)
+auto_save_interval = 60
+
+# Maximum items in history
+max_history_items = 1000
+
+[proxy]
+# Proxy listen address
+listen_addr = "127.0.0.1"
+
+# Default proxy port
+default_port = 8080
+
+# Enable HTTPS interception (MITM)
+https_intercept = true
+
+# CA certificate path (auto-generated if not specified)
+# ca_cert_path = "~/.ancarna/ca.crt"
+# ca_key_path = "~/.ancarna/ca.key"
+
+# Request size limit in bytes (10MB)
+max_request_size = 10485760
+
+# Response size limit in bytes (50MB)
+max_response_size = 52428800
+
+# Upstream proxy for chaining (optional)
+# upstream_proxy = "http://127.0.0.1:8888"
+
+# Domains to exclude from interception
+exclude_domains = []
+
+[scanner]
+# Maximum concurrent scan threads
+max_threads = 10
+
+# Request timeout in seconds
+request_timeout = 30
+
+# Delay between requests in milliseconds
+request_delay = 100
+
+# Follow redirects
+follow_redirects = true
+
+# Maximum redirect depth
+max_redirects = 10
+
+# Default scan policy
+default_policy = "standard"
+
+# User agent string
+user_agent = "Ancarna/0.1.0"
+
+[tui]
+# Color theme (default, light)
+theme = "default"
+
+# Enable vim-like keybindings
+vim_mode = true
+
+# Show line numbers in editors
+show_line_numbers = true
+
+# Syntax highlighting
+syntax_highlighting = true
+
+# Response body size limit for display in bytes (1MB)
+max_display_size = 1048576
+
+[scripting]
+# Enable JavaScript scripting
+enabled = true
+
+# Script timeout in milliseconds
+timeout_ms = 5000
+
+# Maximum memory for script execution in bytes (64MB)
+max_memory = 67108864

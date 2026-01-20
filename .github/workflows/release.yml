@@ -1,0 +1,170 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Create GitHub Release
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get version from tag
+        id: get_version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Ancarna ${{ steps.get_version.outputs.version }}
+          body: |
+            ## Ancarna ${{ steps.get_version.outputs.version }}
+
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+
+            ### Installation
+
+            Download the appropriate binary for your platform below.
+
+            **Linux (x86_64)**
+            ```bash
+            curl -LO https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/ancarna-linux-x86_64.tar.gz
+            tar xzf ancarna-linux-x86_64.tar.gz
+            sudo mv ancarna /usr/local/bin/
+            ```
+
+            **macOS (Intel)**
+            ```bash
+            curl -LO https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/ancarna-macos-x86_64.tar.gz
+            tar xzf ancarna-macos-x86_64.tar.gz
+            sudo mv ancarna /usr/local/bin/
+            ```
+
+            **macOS (Apple Silicon)**
+            ```bash
+            curl -LO https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/ancarna-macos-aarch64.tar.gz
+            tar xzf ancarna-macos-aarch64.tar.gz
+            sudo mv ancarna /usr/local/bin/
+            ```
+
+            **Windows**
+            Download `ancarna-windows-x86_64.zip` and extract to your preferred location.
+          draft: false
+          prerelease: false
+
+  # Build and upload binaries
+  build-release:
+    name: Build Release
+    needs: create-release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: ancarna
+            asset_name: ancarna-linux-x86_64
+            archive: tar.gz
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            artifact_name: ancarna
+            asset_name: ancarna-linux-x86_64-musl
+            archive: tar.gz
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: ancarna
+            asset_name: ancarna-macos-x86_64
+            archive: tar.gz
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: ancarna
+            asset_name: ancarna-macos-aarch64
+            archive: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: ancarna.exe
+            asset_name: ancarna-windows-x86_64
+            archive: zip
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install musl tools
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Create archive (Unix)
+        if: matrix.archive == 'tar.gz'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../${{ matrix.asset_name }}.tar.gz ${{ matrix.artifact_name }}
+          cd ../../..
+
+      - name: Create archive (Windows)
+        if: matrix.archive == 'zip'
+        shell: powershell
+        run: |
+          Compress-Archive -Path target/${{ matrix.target }}/release/${{ matrix.artifact_name }} -DestinationPath ${{ matrix.asset_name }}.zip
+
+      - name: Upload release asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./${{ matrix.asset_name }}.${{ matrix.archive }}
+          asset_name: ${{ matrix.asset_name }}.${{ matrix.archive }}
+          asset_content_type: ${{ matrix.archive == 'tar.gz' && 'application/gzip' || 'application/zip' }}
+
+      - name: Generate SHA256 checksum
+        shell: bash
+        run: |
+          if [ "${{ matrix.archive }}" = "tar.gz" ]; then
+            sha256sum ${{ matrix.asset_name }}.tar.gz > ${{ matrix.asset_name }}.tar.gz.sha256
+          else
+            sha256sum ${{ matrix.asset_name }}.zip > ${{ matrix.asset_name }}.zip.sha256
+          fi
+
+      - name: Upload checksum
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./${{ matrix.asset_name }}.${{ matrix.archive }}.sha256
+          asset_name: ${{ matrix.asset_name }}.${{ matrix.archive }}.sha256
+          asset_content_type: text/plain
+
+  # Publish to crates.io
+  publish-crate:
+    name: Publish to crates.io
+    needs: [create-release, build-release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Publish to crates.io
+        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        continue-on-error: true  # Don't fail if already published
