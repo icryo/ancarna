@@ -1,6 +1,6 @@
 # Ancarna
 
-**Web Proxy Security in Your Terminal**
+**Web Proxy in Your Terminal**
 
 ![Ancarna](example.png)
 
