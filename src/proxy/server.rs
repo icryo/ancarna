@@ -264,15 +264,16 @@ async fn handle_connect(
         let (cert_pem, key_pem) = ca.generate_cert(host)?;
         tracing::info!("Proxy: cert generated, parsing certificate");
 
-        // Parse certificate and key
-        let certs = rustls_pemfile::certs(&mut cert_pem.as_bytes())
-            .collect::<Result<Vec<_>, _>>()
-            .context("Failed to parse certificate")?;
+        // Parse certificate and key using rustls-pki-types PEM support
+        use rustls_pki_types::pem::PemObject;
+        let certs: Vec<rustls_pki_types::CertificateDer<'static>> =
+            rustls_pki_types::CertificateDer::pem_slice_iter(cert_pem.as_bytes())
+                .collect::<Result<Vec<_>, _>>()
+                .context("Failed to parse certificate")?;
         tracing::info!("Proxy: parsed {} certs", certs.len());
 
-        let key = rustls_pemfile::private_key(&mut key_pem.as_bytes())
-            .context("Failed to parse private key")?
-            .context("No private key found")?;
+        let key = rustls_pki_types::PrivateKeyDer::from_pem_slice(key_pem.as_bytes())
+            .context("Failed to parse private key")?;
         tracing::info!("Proxy: parsed private key");
 
         // Create TLS config with ALPN for HTTP/1.1 only

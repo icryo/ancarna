@@ -48,7 +48,7 @@ tower = { version = "0.5", features = ["full"] }
 # TLS & Certificates (for MITM proxy)
 # ═══════════════════════════════════════════════════════════════════════════════
 rustls = { version = "0.23", features = ["ring"] }
-rustls-pemfile = "2.2"
+rustls-pki-types = { version = "1.9", features = ["std"] }
 rcgen = { version = "0.13", features = ["ring"] }
 tokio-rustls = { version = "0.26", features = ["ring"] }
 webpki-roots = "0.26"
