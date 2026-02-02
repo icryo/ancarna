@@ -3,8 +3,8 @@
 //! Provides scripting capabilities for pre/post request scripts
 //! and custom automation.
 
-use anyhow::{Context, Result};
-use boa_engine::{Context as JsContext, JsResult, JsValue, Source};
+use anyhow::Result;
+use boa_engine::{Context as JsContext, JsValue, Source};
 use std::collections::HashMap;
 
 /// Script execution context

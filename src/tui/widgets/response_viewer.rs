@@ -116,7 +116,7 @@ impl<'a> ResponseViewer<'a> {
         frame.render_widget(Paragraph::new(status_line), chunks[0]);
 
         // Tabs
-        let tabs = vec!["Body", "Headers", "Cookies", "Timing"];
+        let tabs = ["Body", "Headers", "Cookies", "Timing"];
         let tab_line: Vec<Span> = tabs
             .iter()
             .enumerate()

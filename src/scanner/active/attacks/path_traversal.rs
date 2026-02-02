@@ -55,7 +55,7 @@ pub async fn scan(client: &HttpClient, target_url: &str) -> Result<Vec<Finding>>
         .collect();
 
     // Also check the path segments
-    let path = url.path();
+    let _path = url.path();
     let has_file_param = params.iter().any(|(k, v)| {
         let k_lower = k.to_lowercase();
         let v_lower = v.to_lowercase();

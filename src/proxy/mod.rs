@@ -9,11 +9,6 @@ mod server;
 mod tls;
 mod websocket;
 
-pub use history::{HistoryEntry, ProxyHistory};
-pub use intercept::{InterceptDecision, InterceptManager, InterceptRule, InterceptedRequest};
+pub use history::HistoryEntry;
+pub use intercept::{InterceptDecision, InterceptedRequest};
 pub use server::ProxyServer;
-pub use tls::CertificateAuthority;
-pub use websocket::{
-    MessageDirection, MessageType, SessionState, WebSocketFilter, WebSocketHistory,
-    WebSocketMessage, WebSocketSession,
-};

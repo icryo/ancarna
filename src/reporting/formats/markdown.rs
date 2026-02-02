@@ -37,9 +37,7 @@ pub fn generate(report: &ScanReport) -> Result<String> {
 
     // Executive Summary
     md.push_str("## Executive Summary\n\n");
-    md.push_str(&format!(
-        "| Metric | Value |\n|--------|-------|\n"
-    ));
+    md.push_str("| Metric | Value |\n|--------|-------|\n");
     md.push_str(&format!(
         "| Total Findings | {} |\n",
         report.summary.total_findings

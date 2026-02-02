@@ -130,14 +130,12 @@ fn convert_operation(
 
     // Add content-type for methods with body
     if method == "POST" || method == "PUT" || method == "PATCH" {
-        if let Some(body) = &operation.request_body {
-            if let openapiv3::ReferenceOr::Item(b) = body {
-                if b.content.contains_key("application/json") {
-                    request
-                        .headers
-                        .insert("Content-Type".to_string(), "application/json".to_string());
-                    request.body = Some("{}".to_string());
-                }
+        if let Some(openapiv3::ReferenceOr::Item(b)) = &operation.request_body {
+            if b.content.contains_key("application/json") {
+                request
+                    .headers
+                    .insert("Content-Type".to_string(), "application/json".to_string());
+                request.body = Some("{}".to_string());
             }
         }
     }

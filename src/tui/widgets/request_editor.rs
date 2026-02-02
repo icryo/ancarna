@@ -3,7 +3,7 @@
 use ratatui::{
     layout::Rect,
     style::Style,
-    widgets::{Block, Borders, Paragraph, Widget},
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
 
@@ -107,7 +107,7 @@ impl<'a> RequestEditor<'a> {
         frame.render_widget(Paragraph::new(url_line), chunks[0]);
 
         // Tabs
-        let tabs = vec!["Params", "Headers", "Body", "Auth", "Pre", "Post"];
+        let tabs = ["Params", "Headers", "Body", "Auth", "Pre", "Post"];
         let tab_line: Vec<Span> = tabs
             .iter()
             .enumerate()

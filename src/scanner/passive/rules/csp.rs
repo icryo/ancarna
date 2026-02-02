@@ -4,11 +4,40 @@
 
 use std::collections::HashMap;
 
-use crate::http::Response;
+use crate::http::{Request, Response};
 use crate::scanner::findings::{Finding, Severity};
+use crate::scanner::passive::PassiveRule;
 
 /// CSP analysis passive scanner rule
-pub struct CspRule;
+pub struct CspRule {
+    enabled: bool,
+}
+
+impl CspRule {
+    pub fn new() -> Self {
+        Self { enabled: true }
+    }
+}
+
+impl Default for CspRule {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PassiveRule for CspRule {
+    fn name(&self) -> &str {
+        "Content Security Policy"
+    }
+
+    fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    fn scan(&self, request: &Request, response: &Response) -> Vec<Finding> {
+        Self::analyze(response, &request.url)
+    }
+}
 
 impl CspRule {
     /// Analyze response for CSP issues
@@ -182,7 +211,7 @@ fn parse_csp(csp: &str) -> HashMap<String, Vec<&str>> {
     let mut directives = HashMap::new();
 
     for directive_part in csp.split(';') {
-        let parts: Vec<&str> = directive_part.trim().split_whitespace().collect();
+        let parts: Vec<&str> = directive_part.split_whitespace().collect();
         if let Some((&name, values)) = parts.split_first() {
             directives.insert(name.to_lowercase(), values.to_vec());
         }

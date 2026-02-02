@@ -4,7 +4,7 @@ use ratatui::{
     layout::Rect,
     style::Style,
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Row, Table},
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
 
@@ -85,14 +85,14 @@ impl<'a> ProxyLog<'a> {
             .take(inner.height as usize)
             .enumerate()
             .map(|(i, entry)| {
-                let is_selected = i + self.scroll == self.selected;
+                let _is_selected = i + self.scroll == self.selected;
                 let method_color = self.theme.method_color(&entry.method);
                 let status_color = entry
                     .status
                     .map(|s| self.theme.status_color(s))
                     .unwrap_or(self.theme.muted);
 
-                let mut spans = vec![
+                let spans = vec![
                     Span::styled(
                         format!("{:>3} ", entry.id),
                         Style::default().fg(self.theme.muted),

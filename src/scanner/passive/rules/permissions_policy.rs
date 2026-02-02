@@ -2,11 +2,40 @@
 
 use std::collections::HashMap;
 
-use crate::http::Response;
+use crate::http::{Request, Response};
 use crate::scanner::findings::{Finding, Severity};
+use crate::scanner::passive::PassiveRule;
 
 /// Permissions policy analysis passive scanner rule
-pub struct PermissionsPolicyRule;
+pub struct PermissionsPolicyRule {
+    enabled: bool,
+}
+
+impl PermissionsPolicyRule {
+    pub fn new() -> Self {
+        Self { enabled: true }
+    }
+}
+
+impl Default for PermissionsPolicyRule {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PassiveRule for PermissionsPolicyRule {
+    fn name(&self) -> &str {
+        "Permissions Policy"
+    }
+
+    fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    fn scan(&self, request: &Request, response: &Response) -> Vec<Finding> {
+        Self::analyze(response, &request.url)
+    }
+}
 
 impl PermissionsPolicyRule {
     /// Analyze response for permissions policy issues

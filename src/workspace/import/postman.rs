@@ -2,7 +2,6 @@
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
-use std::collections::HashMap;
 
 use super::ImportResult;
 use crate::http::{AuthConfig, Request};
@@ -82,11 +81,11 @@ fn convert_item(item: &PostmanItem) -> Result<CollectionItem> {
             req.auth = convert_auth(auth);
         }
 
-        Ok(CollectionItem::Request(RequestItem {
+        Ok(CollectionItem::Request(Box::new(RequestItem {
             id: uuid::Uuid::new_v4().to_string(),
             name: item.name.clone(),
             request: req,
-        }))
+        })))
     } else {
         Err(anyhow::anyhow!("Invalid item: neither folder nor request"))
     }

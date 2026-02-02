@@ -3,7 +3,6 @@
 use anyhow::Result;
 use parking_lot::RwLock;
 use std::sync::Arc;
-use tokio::sync::mpsc;
 
 use super::findings::{Finding, Severity};
 use super::passive::PassiveScanner;

@@ -3,13 +3,13 @@
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, StatefulWidget, Widget},
+    style::{Color, Style},
+    widgets::{Block, StatefulWidget, Widget},
 };
 
 /// State for the text input widget
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct TextInputState {
     /// Current text content
     pub value: String,
@@ -25,18 +25,6 @@ pub struct TextInputState {
     pub placeholder: String,
 }
 
-impl Default for TextInputState {
-    fn default() -> Self {
-        Self {
-            value: String::new(),
-            cursor: 0,
-            selection_start: None,
-            scroll_offset: 0,
-            focused: false,
-            placeholder: String::new(),
-        }
-    }
-}
 
 impl TextInputState {
     pub fn new() -> Self {

@@ -93,7 +93,7 @@ impl<'a> TreeNavigator<'a> {
         let mut lines = Vec::new();
         let indent = "  ".repeat(depth);
 
-        for (i, node) in nodes.iter().enumerate() {
+        for node in nodes.iter() {
             let icon = match node.node_type {
                 NodeType::Collection => "📁",
                 NodeType::Folder => if node.expanded { "📂" } else { "📁" },

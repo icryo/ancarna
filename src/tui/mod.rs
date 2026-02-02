@@ -19,7 +19,6 @@ use ratatui::{
 };
 
 use crate::app::{App, AppMode, Focus, MainTab, ProxyDetailsTab};
-use crate::workspace::CollectionItem;
 
 /// Safely truncate a string at a character boundary
 fn safe_truncate(s: &str, max_len: usize) -> String {
@@ -86,6 +85,10 @@ pub fn render(frame: &mut Frame, app: &App) {
         render_rename_dialog(frame, app, &theme);
     } else if state.mode == AppMode::BrowserUrl {
         render_browser_url_dialog(frame, app, &theme);
+    } else if state.mode == AppMode::ImportFile {
+        render_import_file_dialog(frame, app, &theme);
+    } else if state.mode == AppMode::EditScannerTarget {
+        render_scanner_target_dialog(frame, app, &theme);
     } else if state.mode == AppMode::ProxyDetails {
         drop(state);
         render_proxy_details_dialog(frame, app, &theme);
@@ -143,7 +146,7 @@ fn render_workspace_view(frame: &mut Frame, area: Rect, app: &App, theme: &Theme
         .split(area);
 
     // Render URL bar
-    render_url_bar(frame, vertical[0], app, &theme);
+    render_url_bar(frame, vertical[0], app, theme);
 
     // Three-column layout for panels
     let columns = Layout::default()
@@ -381,7 +384,7 @@ fn render_collections_panel(frame: &mut Frame, area: Rect, app: &App, focused: b
                     let method = item.request.as_ref().map(|r| r.method.as_str()).unwrap_or("???");
                     let m_color = method_color(method);
 
-                    let bg = if is_selected {
+                    let _bg = if is_selected {
                         Some(theme.accent)
                     } else {
                         None
@@ -656,12 +659,6 @@ fn render_params_tab(frame: &mut Frame, area: Rect, state: &crate::app::AppState
                 Style::default().fg(theme.fg),
                 Some(Color::DarkGray),
             )
-        } else if is_selected {
-            (
-                Style::default().fg(theme.info),
-                Style::default().fg(theme.fg),
-                None,
-            )
         } else {
             (
                 Style::default().fg(theme.info),
@@ -751,12 +748,6 @@ fn render_headers_tab(frame: &mut Frame, area: Rect, state: &crate::app::AppStat
                 Style::default().fg(theme.fg),
                 Some(Color::DarkGray),
             )
-        } else if is_selected {
-            (
-                Style::default().fg(theme.info),
-                Style::default().fg(theme.fg),
-                None,
-            )
         } else {
             (
                 Style::default().fg(theme.info),
@@ -825,14 +816,14 @@ fn render_body_tab(frame: &mut Frame, area: Rect, state: &crate::app::AppState, 
         .iter()
         .enumerate()
         .map(|(i, name)| {
-            let is_selected = match (i, state.body_content_type) {
-                (0, BodyContentType::None) => true,
-                (1, BodyContentType::Json) => true,
-                (2, BodyContentType::FormUrlEncoded) => true,
-                (3, BodyContentType::FormData) => true,
-                (4, BodyContentType::Raw) => true,
-                _ => false,
-            };
+            let is_selected = matches!(
+                (i, state.body_content_type),
+                (0, BodyContentType::None)
+                    | (1, BodyContentType::Json)
+                    | (2, BodyContentType::FormUrlEncoded)
+                    | (3, BodyContentType::FormData)
+                    | (4, BodyContentType::Raw)
+            );
             if is_selected {
                 Span::styled(format!("[{}]", name), Style::default().fg(theme.accent))
             } else {
@@ -1399,7 +1390,7 @@ fn render_proxy_view(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         // Build history list as lines (simpler than table for now)
         let mut lines = Vec::new();
 
-        for (display_idx, (original_idx, entry)) in filtered_entries.iter().enumerate() {
+        for (display_idx, (_original_idx, entry)) in filtered_entries.iter().enumerate() {
             let is_selected = display_idx == state.selected_proxy_item && state.focus == Focus::ProxyHistory;
             let m_color = method_color(&entry.method);
 
@@ -1410,7 +1401,7 @@ fn render_proxy_view(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
                 else { theme.error }
             }).unwrap_or(theme.muted);
 
-            let size_str = entry.response_size.map(|s| format_size(s)).unwrap_or_else(|| "-".to_string());
+            let size_str = entry.response_size.map(format_size).unwrap_or_else(|| "-".to_string());
             let time_str = entry.duration_ms.map(|t| format!("{}ms", t)).unwrap_or_else(|| "-".to_string());
 
             // Truncate path for display
@@ -1544,9 +1535,9 @@ fn render_proxy_view(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
                 .title(" Response ");
 
             let status_color = match entry.status {
-                Some(s) if s >= 200 && s < 300 => theme.success,
-                Some(s) if s >= 300 && s < 400 => theme.info,
-                Some(s) if s >= 400 && s < 500 => theme.warning,
+                Some(s) if (200..300).contains(&s) => theme.success,
+                Some(s) if (300..400).contains(&s) => theme.info,
+                Some(s) if (400..500).contains(&s) => theme.warning,
                 Some(s) if s >= 500 => theme.error,
                 _ => theme.muted,
             };
@@ -1562,7 +1553,7 @@ fn render_proxy_view(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
                 Line::from(vec![
                     Span::styled("Size: ", Style::default().fg(theme.muted)),
                     Span::styled(
-                        entry.response_size.map(|s| format_size(s)).unwrap_or_else(|| "-".to_string()),
+                        entry.response_size.map(format_size).unwrap_or_else(|| "-".to_string()),
                         Style::default().fg(theme.fg),
                     ),
                     Span::styled("  Time: ", Style::default().fg(theme.muted)),
@@ -1990,8 +1981,8 @@ fn render_scanner_view(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) 
 
 /// Render placeholder for unimplemented views
 fn render_fuzzer_view(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
-    use crate::app::{FuzzerFocus, FuzzerPayloadSet, FuzzerSortBy};
-    use crate::fuzzer::{AttackMode, FuzzerState};
+    use crate::app::{FuzzerFocus, FuzzerSortBy};
+    use crate::fuzzer::FuzzerState;
 
     let state = app.state.read();
 
@@ -2175,7 +2166,7 @@ fn render_fuzzer_view(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
             0
         };
 
-        for (display_idx, (original_idx, result)) in sorted_results.iter().enumerate().skip(scroll_offset).take(visible_height) {
+        for (_display_idx, (original_idx, result)) in sorted_results.iter().enumerate().skip(scroll_offset).take(visible_height) {
             let is_selected = *original_idx == state.fuzzer_selected_result && results_focus;
 
             let status_color = match result.status_code {
@@ -2766,6 +2757,12 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         AppMode::EditInterceptBody => "EDIT BODY",
         AppMode::FindingDetails => "FINDING",
         AppMode::FilterFindings => "FILTER",
+        AppMode::ImportFile => "IMPORT",
+        AppMode::EditScannerTarget => "SCAN TARGET",
+        AppMode::Scanning => "SCANNING",
+        AppMode::Fuzzing => "FUZZING",
+        AppMode::ViewResponse => "RESPONSE",
+        AppMode::Intercept => "INTERCEPT",
     };
 
     let proxy_indicator = if state.proxy_running {
@@ -3105,6 +3102,84 @@ fn render_browser_url_dialog(frame: &mut Frame, app: &App, theme: &Theme) {
     frame.render_widget(content, area);
 }
 
+fn render_import_file_dialog(frame: &mut Frame, app: &App, theme: &Theme) {
+    let state = app.state.read();
+    let area = centered_rect(70, 35, frame.area());
+
+    let content = Paragraph::new(vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Enter file path to import:",
+            Style::default().fg(theme.fg),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Supported formats: Postman, HAR, OpenAPI, curl",
+            Style::default().fg(theme.muted),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  > ", Style::default().fg(theme.accent)),
+            Span::styled(&state.import_path_input, Style::default().fg(theme.fg)),
+            Span::styled("█", Style::default().fg(theme.accent).add_modifier(Modifier::SLOW_BLINK)),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Enter:import  Esc:cancel",
+            Style::default().fg(theme.muted),
+        )),
+    ])
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.accent))
+            .title(Span::styled(" Import Collection ", Style::default().fg(theme.accent))),
+    )
+    .style(Style::default().fg(theme.fg));
+
+    frame.render_widget(ratatui::widgets::Clear, area);
+    frame.render_widget(content, area);
+}
+
+fn render_scanner_target_dialog(frame: &mut Frame, app: &App, theme: &Theme) {
+    let state = app.state.read();
+    let area = centered_rect(70, 35, frame.area());
+
+    let content = Paragraph::new(vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Enter target URL for active scan:",
+            Style::default().fg(theme.fg),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  e.g., https://example.com or https://api.example.com/v1",
+            Style::default().fg(theme.muted),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  > ", Style::default().fg(theme.accent)),
+            Span::styled(&state.scanner_target_url, Style::default().fg(theme.fg)),
+            Span::styled("█", Style::default().fg(theme.accent).add_modifier(Modifier::SLOW_BLINK)),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Enter:scan  Esc:cancel",
+            Style::default().fg(theme.muted),
+        )),
+    ])
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.accent))
+            .title(Span::styled(" Active Scanner ", Style::default().fg(theme.accent))),
+    )
+    .style(Style::default().fg(theme.fg));
+
+    frame.render_widget(ratatui::widgets::Clear, area);
+    frame.render_widget(content, area);
+}
+
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
@@ -3408,9 +3483,9 @@ fn render_proxy_details_dialog(frame: &mut Frame, app: &App, theme: &Theme) {
             // Status line
             let status = entry.status.unwrap_or(0);
             let status_color = match status {
-                s if s >= 200 && s < 300 => theme.success,
-                s if s >= 300 && s < 400 => theme.info,
-                s if s >= 400 && s < 500 => theme.warning,
+                s if (200..300).contains(&s) => theme.success,
+                s if (300..400).contains(&s) => theme.info,
+                s if (400..500).contains(&s) => theme.warning,
                 s if s >= 500 => theme.error,
                 _ => theme.muted,
             };
@@ -3442,7 +3517,7 @@ fn render_proxy_details_dialog(frame: &mut Frame, app: &App, theme: &Theme) {
             lines.push(Line::from(vec![
                 Span::styled("Size: ", Style::default().fg(theme.muted)),
                 Span::styled(
-                    entry.response_size.map(|s| format_size(s)).unwrap_or_else(|| "-".to_string()),
+                    entry.response_size.map(format_size).unwrap_or_else(|| "-".to_string()),
                     Style::default().fg(theme.fg),
                 ),
                 Span::styled("  Time: ", Style::default().fg(theme.muted)),
@@ -3650,34 +3725,30 @@ fn render_finding_details_dialog(frame: &mut Frame, app: &App, theme: &Theme) {
     };
 
     // Build content
-    let mut lines = Vec::new();
-
-    // Header with severity
-    lines.push(Line::from(vec![
-        Span::styled("Severity: ", Style::default().fg(theme.muted)),
-        Span::styled(
-            finding.severity.to_uppercase(),
-            Style::default().fg(severity_color).add_modifier(Modifier::BOLD),
-        ),
-    ]));
-
-    lines.push(Line::from(vec![
-        Span::styled("Name: ", Style::default().fg(theme.muted)),
-        Span::styled(&finding.name, Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)),
-    ]));
-
-    lines.push(Line::from(vec![
-        Span::styled("URL: ", Style::default().fg(theme.muted)),
-        Span::styled(&finding.url, Style::default().fg(theme.info)),
-    ]));
-
-    lines.push(Line::from(""));
-
-    // Description
-    lines.push(Line::from(Span::styled(
-        "─── Description ───",
-        Style::default().fg(theme.muted),
-    )));
+    let mut lines = vec![
+        // Header with severity
+        Line::from(vec![
+            Span::styled("Severity: ", Style::default().fg(theme.muted)),
+            Span::styled(
+                finding.severity.to_uppercase(),
+                Style::default().fg(severity_color).add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("Name: ", Style::default().fg(theme.muted)),
+            Span::styled(&finding.name, Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled("URL: ", Style::default().fg(theme.muted)),
+            Span::styled(&finding.url, Style::default().fg(theme.info)),
+        ]),
+        Line::from(""),
+        // Description
+        Line::from(Span::styled(
+            "─── Description ───",
+            Style::default().fg(theme.muted),
+        )),
+    ];
     for line in finding.description.lines() {
         lines.push(Line::from(line.to_string()));
     }

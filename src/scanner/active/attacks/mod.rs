@@ -8,7 +8,7 @@ pub mod ssrf;
 pub mod xss;
 pub mod xxe;
 
-use crate::http::{HttpClient, Request, Response};
+use crate::http::{Request, Response};
 use crate::scanner::findings::Finding;
 
 /// Common interface for attack modules

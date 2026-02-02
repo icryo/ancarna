@@ -6,11 +6,8 @@ mod digest;
 mod jwt;
 mod oauth2;
 
-pub use basic::BasicAuth;
-pub use bearer::BearerAuth;
 pub use digest::DigestAuth;
 pub use jwt::JwtAuth;
-pub use oauth2::OAuth2Auth;
 
 use anyhow::Result;
 use async_trait::async_trait;

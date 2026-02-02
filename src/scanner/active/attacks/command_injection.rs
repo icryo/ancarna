@@ -131,7 +131,7 @@ pub async fn scan_time_based(
         return Ok(findings);
     }
 
-    for (param_name, original_value) in &params {
+    for (param_name, _original_value) in &params {
         for (payload, expected_delay) in TIME_PAYLOADS {
             let mut test_url = url.clone();
             {

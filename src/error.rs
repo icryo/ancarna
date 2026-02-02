@@ -3,7 +3,6 @@
 //! Provides structured error handling with context propagation
 //! and user-friendly error messages.
 
-use std::fmt;
 
 use thiserror::Error;
 

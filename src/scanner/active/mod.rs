@@ -5,12 +5,11 @@
 pub mod attacks;
 
 use anyhow::Result;
-use std::sync::Arc;
 
-use super::findings::{Finding, Severity};
+use super::findings::Finding;
 use super::policies::ScanPolicy;
 use crate::app::Config;
-use crate::http::{HttpClient, Request};
+use crate::http::HttpClient;
 
 /// Active scanner
 pub struct ActiveScanner {

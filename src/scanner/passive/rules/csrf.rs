@@ -2,12 +2,41 @@
 
 use std::collections::HashMap;
 
-use crate::http::Response;
+use crate::http::{Request, Response};
 use crate::scanner::findings::{Finding, Severity};
+use crate::scanner::passive::PassiveRule;
 use regex::Regex;
 
 /// CSRF analysis passive scanner rule
-pub struct CsrfRule;
+pub struct CsrfRule {
+    enabled: bool,
+}
+
+impl CsrfRule {
+    pub fn new() -> Self {
+        Self { enabled: true }
+    }
+}
+
+impl Default for CsrfRule {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PassiveRule for CsrfRule {
+    fn name(&self) -> &str {
+        "CSRF Protection"
+    }
+
+    fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    fn scan(&self, request: &Request, response: &Response) -> Vec<Finding> {
+        Self::analyze(response, &request.url, &response.body_text())
+    }
+}
 
 impl CsrfRule {
     /// Analyze response for CSRF protection

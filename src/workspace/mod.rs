@@ -8,12 +8,12 @@ mod project;
 mod session;
 pub mod import;
 
-pub use collections::{Collection, CollectionItem};
+pub use collections::CollectionItem;
 pub use environments::Environment;
 pub use project::Project;
 pub use session::Session;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::path::PathBuf;
 
 use crate::app::Config;
@@ -145,5 +145,73 @@ impl Workspace {
     pub fn resolve_variable(&self, name: &str) -> Option<String> {
         self.active_environment()
             .and_then(|env| env.get(name))
+    }
+
+    /// Import from file content
+    pub fn import_content(&mut self, content: &str) -> Result<usize> {
+        use import::{import_auto, ImportResult};
+
+        let result = import_auto(content)?;
+
+        // Ensure we have a project
+        if self.project.is_none() {
+            self.new_project("Default Project")?;
+        }
+
+        let project = self.project.as_mut().unwrap();
+
+        match result {
+            ImportResult::Collection(collection) => {
+                project.add_collection(collection);
+                Ok(1)
+            }
+            ImportResult::Collections(collections) => {
+                let count = collections.len();
+                for collection in collections {
+                    project.add_collection(collection);
+                }
+                Ok(count)
+            }
+            ImportResult::Project(imported_project) => {
+                let count = imported_project.collections.len();
+                for collection in imported_project.collections {
+                    project.add_collection(collection);
+                }
+                for env in imported_project.environments {
+                    project.add_environment(env);
+                }
+                Ok(count)
+            }
+        }
+    }
+
+    /// Import from file path
+    pub fn import_file(&mut self, path: &std::path::Path) -> Result<usize> {
+        let content = std::fs::read_to_string(path)
+            .with_context(|| format!("Failed to read file: {:?}", path))?;
+        self.import_content(&content)
+    }
+
+    /// Import from curl command
+    pub fn import_curl(&mut self, curl_command: &str) -> Result<()> {
+        use import::curl;
+
+        let result = curl::import(curl_command)?;
+
+        // Ensure we have a project
+        if self.project.is_none() {
+            self.new_project("Default Project")?;
+        }
+
+        let project = self.project.as_mut().unwrap();
+
+        match result {
+            import::ImportResult::Collection(collection) => {
+                project.add_collection(collection);
+            }
+            _ => {}
+        }
+
+        Ok(())
     }
 }

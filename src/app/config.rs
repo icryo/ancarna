@@ -7,6 +7,7 @@ use std::path::PathBuf;
 /// Main application configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct Config {
     /// General settings
     pub general: GeneralConfig,
@@ -125,17 +126,6 @@ pub struct ScriptingConfig {
     pub max_memory: usize,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            general: GeneralConfig::default(),
-            proxy: ProxyConfig::default(),
-            scanner: ScannerConfig::default(),
-            tui: TuiConfig::default(),
-            scripting: ScriptingConfig::default(),
-        }
-    }
-}
 
 impl Default for GeneralConfig {
     fn default() -> Self {

@@ -333,7 +333,7 @@ impl Fuzzer {
             AttackMode::Sniper => {
                 // Each position gets each payload, one at a time
                 let mut combinations = Vec::new();
-                let set = payload_sets.get(0).unwrap_or(&empty_set);
+                let set = payload_sets.first().unwrap_or(&empty_set);
                 for (pos_idx, pos) in positions.iter().enumerate() {
                     for payload in &set.payloads {
                         let mut values: Vec<String> = positions
@@ -348,7 +348,7 @@ impl Fuzzer {
             }
             AttackMode::Battering => {
                 // Same payload to all positions
-                let set = payload_sets.get(0).unwrap_or(&empty_set);
+                let set = payload_sets.first().unwrap_or(&empty_set);
                 set.payloads
                     .iter()
                     .map(|payload| {

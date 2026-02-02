@@ -2,11 +2,40 @@
 
 use std::collections::HashMap;
 
-use crate::http::Response;
+use crate::http::{Request, Response};
 use crate::scanner::findings::{Finding, Severity};
+use crate::scanner::passive::PassiveRule;
 
 /// Cache control analysis passive scanner rule
-pub struct CacheControlRule;
+pub struct CacheControlRule {
+    enabled: bool,
+}
+
+impl CacheControlRule {
+    pub fn new() -> Self {
+        Self { enabled: true }
+    }
+}
+
+impl Default for CacheControlRule {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PassiveRule for CacheControlRule {
+    fn name(&self) -> &str {
+        "Cache Control"
+    }
+
+    fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    fn scan(&self, request: &Request, response: &Response) -> Vec<Finding> {
+        Self::analyze(response, &request.url)
+    }
+}
 
 impl CacheControlRule {
     /// Analyze response for cache-related security issues

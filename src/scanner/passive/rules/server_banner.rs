@@ -2,12 +2,41 @@
 
 use std::collections::HashMap;
 
-use crate::http::Response;
+use crate::http::{Request, Response};
 use crate::scanner::findings::{Finding, Severity};
+use crate::scanner::passive::PassiveRule;
 use regex::Regex;
 
 /// Server banner disclosure passive scanner rule
-pub struct ServerBannerRule;
+pub struct ServerBannerRule {
+    enabled: bool,
+}
+
+impl ServerBannerRule {
+    pub fn new() -> Self {
+        Self { enabled: true }
+    }
+}
+
+impl Default for ServerBannerRule {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PassiveRule for ServerBannerRule {
+    fn name(&self) -> &str {
+        "Server Banner"
+    }
+
+    fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    fn scan(&self, request: &Request, response: &Response) -> Vec<Finding> {
+        Self::analyze(response, &request.url)
+    }
+}
 
 impl ServerBannerRule {
     /// Analyze response for server/technology disclosure

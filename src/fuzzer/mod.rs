@@ -8,12 +8,9 @@ mod payloads;
 mod results;
 
 pub use engine::{Fuzzer, FuzzerConfig, AttackMode, FuzzerState};
-pub use payloads::{PayloadSet, PayloadGenerator, PayloadPosition};
+pub use payloads::{PayloadSet, PayloadPosition};
 pub use results::{FuzzResult, FuzzResultSet};
 
-use anyhow::Result;
-use std::sync::Arc;
-use parking_lot::RwLock;
 
 /// Fuzzer statistics
 #[derive(Debug, Clone, Default)]

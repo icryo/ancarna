@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 use super::history::ProxyHistory;
 use super::intercept::InterceptManager;
 use super::tls::CertificateAuthority;
-use super::websocket::{MessageDirection, WebSocketHistory};
+use super::websocket::WebSocketHistory;
 use crate::app::{AppEvent, ProxyConfig};
 
 /// Intercepting proxy server
@@ -180,13 +180,13 @@ async fn handle_connection(
     event_tx: mpsc::Sender<AppEvent>,
     config: ProxyConfig,
 ) -> Result<()> {
-    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+    use tokio::io::{AsyncBufReadExt, BufReader};
 
     let mut reader = BufReader::new(&mut stream);
     let mut request_line = String::new();
     reader.read_line(&mut request_line).await?;
 
-    let parts: Vec<&str> = request_line.trim().split_whitespace().collect();
+    let parts: Vec<&str> = request_line.split_whitespace().collect();
     if parts.len() < 3 {
         return Err(anyhow::anyhow!("Invalid request line"));
     }
@@ -335,7 +335,7 @@ async fn handle_tls_traffic(
             }
         }
 
-        let parts: Vec<&str> = request_line.trim().split_whitespace().collect();
+        let parts: Vec<&str> = request_line.split_whitespace().collect();
         if parts.len() < 3 {
             tracing::warn!("Proxy: invalid request line (parts={}): {:?}", parts.len(), request_line);
             break;
@@ -408,7 +408,7 @@ async fn handle_tls_traffic(
         tracing::info!("HTTPS request: {} {} (body: {} bytes)", method, url, body.len());
 
         // Check if intercept is enabled
-        let (should_intercept, intercept_enabled) = {
+        let (should_intercept, _intercept_enabled) = {
             let mgr = intercept.read();
             (mgr.is_enabled(), mgr.is_enabled())
         };
@@ -535,7 +535,7 @@ async fn handle_tls_traffic(
         response_reader.read_line(&mut status_line).await?;
         tracing::info!("Proxy: target response: {}", status_line.trim());
 
-        let status_parts: Vec<&str> = status_line.trim().split_whitespace().collect();
+        let status_parts: Vec<&str> = status_line.split_whitespace().collect();
         let status_code: u16 = status_parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
 
         // Read response headers
@@ -597,6 +597,13 @@ async fn handle_tls_traffic(
             Some(response_body.clone()),
         );
 
+        // Send ProxyComplete event for passive scanning
+        if let Some(entry) = history.get(id) {
+            if let Err(e) = event_tx.send(AppEvent::ProxyComplete(entry)).await {
+                tracing::warn!("Failed to send ProxyComplete event: {}", e);
+            }
+        }
+
         // Forward response to client
         tracing::info!("Proxy: forwarding response {} ({} bytes) to client", status_code, response_body.len());
         write_half.write_all(status_line.as_bytes()).await?;
@@ -657,9 +664,9 @@ async fn handle_http_request(
     target: &str,
     headers: Vec<String>,
     history: Arc<ProxyHistory>,
-    intercept: Arc<parking_lot::RwLock<InterceptManager>>,
+    _intercept: Arc<parking_lot::RwLock<InterceptManager>>,
     event_tx: mpsc::Sender<AppEvent>,
-    config: ProxyConfig,
+    _config: ProxyConfig,
 ) -> Result<()> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -738,6 +745,13 @@ async fn handle_http_request(
         std::collections::HashMap::new(),
         Some(response.clone()),
     );
+
+    // Send ProxyComplete event for passive scanning
+    if let Some(entry) = history.get(id) {
+        if let Err(e) = event_tx.send(AppEvent::ProxyComplete(entry)).await {
+            tracing::warn!("Failed to send ProxyComplete event: {}", e);
+        }
+    }
 
     // Send response to client
     tracing::info!("Proxy: sending {} byte response (status {})", response.len(), status_code);

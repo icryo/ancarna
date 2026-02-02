@@ -26,11 +26,10 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use clap::Parser;
 use crossterm::{execute, terminal};
-use tokio::signal;
 use tokio::sync::broadcast;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{
-    fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer,
+    fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter,
 };
 
 use crate::app::{App, Config};
@@ -312,7 +311,7 @@ async fn run_app(
     cli: Cli,
     config: Config,
     mut shutdown_rx: broadcast::Receiver<()>,
-    shutdown_flag: Arc<AtomicBool>,
+    _shutdown_flag: Arc<AtomicBool>,
 ) -> Result<()> {
     // Create application
     let mut app = App::new(config, cli.proxy_port).await?;

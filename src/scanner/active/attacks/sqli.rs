@@ -88,7 +88,7 @@ pub async fn scan(client: &HttpClient, target_url: &str) -> Result<Vec<Finding>>
         .collect();
 
     // Test each parameter with each payload
-    for (param_name, original_value) in &params {
+    for (param_name, _original_value) in &params {
         for payload in SQLI_PAYLOADS {
             // Build URL with payload
             let mut test_url = url.clone();
@@ -181,7 +181,7 @@ pub async fn scan_time_based(
             let request = Request::new("GET", test_url.as_str());
             let start = std::time::Instant::now();
 
-            if let Ok(response) = client.execute(&request).await {
+            if let Ok(_response) = client.execute(&request).await {
                 let elapsed = start.elapsed();
 
                 // If response took significantly longer, potential time-based SQLi

@@ -395,7 +395,7 @@ impl JwtAnalyzer {
         }
 
         // User ID manipulation (if sub claim exists)
-        if let Some(sub) = token.payload.get("sub") {
+        if let Some(_sub) = token.payload.get("sub") {
             let mut mods = HashMap::new();
             mods.insert("sub".to_string(), serde_json::json!("1")); // Try admin user ID
             results.push(self.attack_claim_tampering(token, mods));

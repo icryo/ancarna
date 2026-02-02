@@ -37,7 +37,7 @@ pub struct Collection {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum CollectionItem {
-    Request(RequestItem),
+    Request(Box<RequestItem>),
     Folder(FolderItem),
 }
 
@@ -87,11 +87,11 @@ impl Collection {
 
     /// Add a request to the collection
     pub fn add_request(&mut self, name: &str, request: Request) {
-        self.items.push(CollectionItem::Request(RequestItem {
+        self.items.push(CollectionItem::Request(Box::new(RequestItem {
             id: uuid::Uuid::new_v4().to_string(),
             name: name.to_string(),
             request,
-        }));
+        })));
     }
 
     /// Add a folder to the collection
@@ -159,11 +159,11 @@ impl Collection {
 impl FolderItem {
     /// Add a request to this folder
     pub fn add_request(&mut self, name: &str, request: Request) {
-        self.items.push(CollectionItem::Request(RequestItem {
+        self.items.push(CollectionItem::Request(Box::new(RequestItem {
             id: uuid::Uuid::new_v4().to_string(),
             name: name.to_string(),
             request,
-        }));
+        })));
     }
 
     /// Add a subfolder

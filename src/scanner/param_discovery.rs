@@ -4,7 +4,6 @@
 //! Discovers hidden parameters, headers, and cache poisoning opportunities.
 
 use anyhow::Result;
-use std::collections::HashMap;
 use std::time::Duration;
 
 /// Common hidden parameter names to test
@@ -503,7 +502,7 @@ impl CachePoisonTester {
             .header("X-Forwarded-Scheme", "https")
             .send()
             .await?;
-        let headers = response.headers().clone();
+        let _headers = response.headers().clone();
         let body = response.text().await.unwrap_or_default();
 
         if body.contains("https://") && !url.starts_with("https://") {

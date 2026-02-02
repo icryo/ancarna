@@ -4,8 +4,7 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, StatefulWidget, Widget},
+    widgets::{Block, StatefulWidget, Widget},
 };
 
 use super::text_input::TextInputState;
@@ -412,7 +411,7 @@ impl<'a> StatefulWidget for KeyValueEditor<'a> {
 
             // Clear row with base style
             for x in inner.x..inner.x + inner.width {
-                buf.get_mut(x, y).set_style(base_style).set_char(' ');
+                buf[(x, y)].set_style(base_style).set_char(' ');
             }
 
             // Checkbox for enabled state
@@ -473,7 +472,7 @@ impl<'a> StatefulWidget for KeyValueEditor<'a> {
                             .chars()
                             .nth(cursor_state.cursor)
                             .unwrap_or(' ');
-                        buf.get_mut(cursor_x, y)
+                        buf[(cursor_x, y)]
                             .set_char(cursor_char)
                             .set_style(Style::default().bg(Color::White).fg(Color::Black));
                     }

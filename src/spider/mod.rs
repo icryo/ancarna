@@ -6,7 +6,6 @@ use anyhow::Result;
 use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use parking_lot::RwLock;
-use tokio::sync::mpsc;
 
 use crate::http::HttpClient;
 
@@ -310,36 +309,34 @@ fn extract_links(html: &str, base_url: &str) -> Vec<String> {
     };
 
     // Use scraper to parse HTML
-    if let Ok(document) = scraper::Html::parse_document(html).try_into() {
-        let document: scraper::Html = document;
+    let document = scraper::Html::parse_document(html);
 
-        // Extract href attributes
-        let a_selector = scraper::Selector::parse("a[href]").unwrap();
-        for element in document.select(&a_selector) {
-            if let Some(href) = element.value().attr("href") {
-                if let Ok(resolved) = base.join(href) {
-                    links.push(resolved.to_string());
-                }
+    // Extract href attributes
+    let a_selector = scraper::Selector::parse("a[href]").unwrap();
+    for element in document.select(&a_selector) {
+        if let Some(href) = element.value().attr("href") {
+            if let Ok(resolved) = base.join(href) {
+                links.push(resolved.to_string());
             }
         }
+    }
 
-        // Extract form actions
-        let form_selector = scraper::Selector::parse("form[action]").unwrap();
-        for element in document.select(&form_selector) {
-            if let Some(action) = element.value().attr("action") {
-                if let Ok(resolved) = base.join(action) {
-                    links.push(resolved.to_string());
-                }
+    // Extract form actions
+    let form_selector = scraper::Selector::parse("form[action]").unwrap();
+    for element in document.select(&form_selector) {
+        if let Some(action) = element.value().attr("action") {
+            if let Ok(resolved) = base.join(action) {
+                links.push(resolved.to_string());
             }
         }
+    }
 
-        // Extract src attributes (scripts, iframes)
-        let src_selector = scraper::Selector::parse("[src]").unwrap();
-        for element in document.select(&src_selector) {
-            if let Some(src) = element.value().attr("src") {
-                if let Ok(resolved) = base.join(src) {
-                    links.push(resolved.to_string());
-                }
+    // Extract src attributes (scripts, iframes)
+    let src_selector = scraper::Selector::parse("[src]").unwrap();
+    for element in document.select(&src_selector) {
+        if let Some(src) = element.value().attr("src") {
+            if let Ok(resolved) = base.join(src) {
+                links.push(resolved.to_string());
             }
         }
     }

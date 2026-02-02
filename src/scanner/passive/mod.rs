@@ -5,7 +5,7 @@
 pub mod rules;
 
 use crate::http::{Request, Response};
-use crate::scanner::findings::{Finding, Severity};
+use crate::scanner::findings::Finding;
 
 /// Passive scanner
 pub struct PassiveScanner {
@@ -41,6 +41,14 @@ impl PassiveScanner {
             Box::new(rules::InformationDisclosureRule::new()),
             Box::new(rules::ContentTypeRule::new()),
             Box::new(rules::CorsRule::new()),
+            Box::new(rules::CspRule::new()),
+            Box::new(rules::CacheControlRule::new()),
+            Box::new(rules::CsrfRule::new()),
+            Box::new(rules::PermissionsPolicyRule::new()),
+            Box::new(rules::ReferrerPolicyRule::new()),
+            Box::new(rules::ServerBannerRule::new()),
+            Box::new(rules::JwtRule::new()),
+            Box::new(rules::JsAnalysisRule::new()),
         ]
     }
 

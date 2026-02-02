@@ -2,11 +2,40 @@
 
 use std::collections::HashMap;
 
-use crate::http::Response;
+use crate::http::{Request, Response};
 use crate::scanner::findings::{Finding, Severity};
+use crate::scanner::passive::PassiveRule;
 
 /// Referrer policy analysis passive scanner rule
-pub struct ReferrerPolicyRule;
+pub struct ReferrerPolicyRule {
+    enabled: bool,
+}
+
+impl ReferrerPolicyRule {
+    pub fn new() -> Self {
+        Self { enabled: true }
+    }
+}
+
+impl Default for ReferrerPolicyRule {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PassiveRule for ReferrerPolicyRule {
+    fn name(&self) -> &str {
+        "Referrer Policy"
+    }
+
+    fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    fn scan(&self, request: &Request, response: &Response) -> Vec<Finding> {
+        Self::analyze(response, &request.url)
+    }
+}
 
 impl ReferrerPolicyRule {
     /// Analyze response for referrer policy issues

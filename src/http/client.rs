@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
-use super::auth::{self, AuthHandler};
+use super::auth::AuthHandler;
 use super::request::{AuthConfig, Request};
 use super::response::{Response, ResponseTiming};
 use crate::app::Config;
