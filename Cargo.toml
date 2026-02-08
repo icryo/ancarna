@@ -23,7 +23,7 @@ ratatui = "0.30"
 crossterm = "0.28"
 tui-textarea = "0.7"
 tui-tree-widget = "0.23"
-throbber-widgets-tui = "0.8"
+throbber-widgets-tui = "0.10"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # HTTP Client & Networking
