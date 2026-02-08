@@ -51,7 +51,7 @@ rustls = { version = "0.23", features = ["ring"] }
 rustls-pki-types = { version = "1.9", features = ["std"] }
 rcgen = { version = "0.13", features = ["ring"] }
 tokio-rustls = { version = "0.26", features = ["ring"] }
-webpki-roots = "0.26"
+webpki-roots = "1.0"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Async Runtime
