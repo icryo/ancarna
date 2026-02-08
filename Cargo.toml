@@ -20,7 +20,7 @@ libc = "0.2"
 # TUI Framework
 # ═══════════════════════════════════════════════════════════════════════════════
 ratatui = "0.30"
-crossterm = "0.28"
+crossterm = "0.29"
 tui-textarea = "0.7"
 tui-tree-widget = "0.23"
 throbber-widgets-tui = "0.8"
