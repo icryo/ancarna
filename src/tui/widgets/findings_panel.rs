@@ -1,5 +1,7 @@
 //! Findings panel for displaying scan results
 
+#![allow(dead_code)]
+
 use ratatui::{
     layout::Rect,
     style::Style,
@@ -56,26 +58,24 @@ impl<'a> FindingsPanel<'a> {
     }
 
     pub fn render(self, frame: &mut Frame, area: Rect) {
+        use ratatui::style::Modifier;
+
         let border_style = if self.focused {
             Style::default().fg(self.theme.accent)
         } else {
             Style::default().fg(self.theme.border)
         };
 
-        // Count by severity
-        let critical = self.findings.iter().filter(|f| f.severity == "critical").count();
-        let high = self.findings.iter().filter(|f| f.severity == "high").count();
-        let medium = self.findings.iter().filter(|f| f.severity == "medium").count();
-        let low = self.findings.iter().filter(|f| f.severity == "low").count();
-
-        let title = format!(
-            " Findings ({}) C:{} H:{} M:{} L:{} ",
-            self.findings.len(),
-            critical,
-            high,
-            medium,
-            low
-        );
+        // Title with position indicator
+        let title = if self.findings.is_empty() {
+            " Findings (0) ".to_string()
+        } else {
+            format!(
+                " Findings ({}/{}) ",
+                self.selected + 1,
+                self.findings.len()
+            )
+        };
 
         let block = Block::default()
             .borders(Borders::ALL)
@@ -86,9 +86,27 @@ impl<'a> FindingsPanel<'a> {
         frame.render_widget(block, area);
 
         if self.findings.is_empty() {
-            let empty = Paragraph::new("No findings")
-                .style(Style::default().fg(self.theme.muted));
-            frame.render_widget(empty, inner);
+            let empty_lines = vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  No findings yet",
+                    Style::default().fg(self.theme.muted),
+                )),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  Run a scan to detect vulnerabilities:",
+                    Style::default().fg(self.theme.fg),
+                )),
+                Line::from(Span::styled(
+                    "  • Press 's' to start a scan",
+                    Style::default().fg(self.theme.muted),
+                )),
+                Line::from(Span::styled(
+                    "  • Configure target URL first",
+                    Style::default().fg(self.theme.muted),
+                )),
+            ];
+            frame.render_widget(Paragraph::new(empty_lines), inner);
             return;
         }
 
@@ -100,21 +118,31 @@ impl<'a> FindingsPanel<'a> {
                 let is_selected = i == self.selected;
                 let severity_color = self.theme.severity_color(&finding.severity);
 
+                // Different shapes for different severities (accessibility)
+                // Critical: ◆ (diamond), High: ▲ (triangle), Medium: ■ (square), Low: ● (circle)
                 let severity_indicator = match finding.severity.as_str() {
-                    "critical" => "●",
-                    "high" => "●",
-                    "medium" => "●",
+                    "critical" => "◆",
+                    "high" => "▲",
+                    "medium" => "■",
                     "low" => "●",
                     _ => "○",
                 };
 
+                // Selection marker
+                let marker = if is_selected && self.focused {
+                    Span::styled("▸ ", Style::default().fg(self.theme.accent))
+                } else {
+                    Span::raw("  ")
+                };
+
                 let style = if is_selected {
-                    Style::default().fg(self.theme.accent)
+                    Style::default().fg(self.theme.accent).add_modifier(Modifier::BOLD)
                 } else {
                     Style::default()
                 };
 
                 Line::from(vec![
+                    marker,
                     Span::styled(
                         format!("{} ", severity_indicator),
                         Style::default().fg(severity_color),

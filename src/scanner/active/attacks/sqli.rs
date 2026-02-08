@@ -1,5 +1,7 @@
 //! SQL Injection testing
 
+#![allow(dead_code)]
+
 use anyhow::Result;
 use regex::Regex;
 

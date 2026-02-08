@@ -17,6 +17,7 @@ use crate::workspace::Workspace;
 
 /// Application running mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum AppMode {
     /// Normal browsing/editing mode
     Normal,
@@ -70,6 +71,12 @@ pub enum AppMode {
     ImportFile,
     /// Editing active scanner target URL
     EditScannerTarget,
+    /// Editing script content
+    EditScript,
+    /// Viewing WebSocket messages
+    ViewWebSocket,
+    /// Report generation dialog
+    ReportDialog,
 }
 
 /// Current focus within the TUI
@@ -85,8 +92,6 @@ pub enum Focus {
     ProxyHistory,
     /// Scan results/findings
     Findings,
-    /// Fuzzer results
-    FuzzerResults,
 }
 
 /// Main tab views
@@ -183,6 +188,7 @@ pub enum InterceptEditSection {
 }
 
 /// Shared application state
+#[allow(dead_code)]
 pub struct AppState {
     /// Current application mode
     pub mode: AppMode,
@@ -202,6 +208,24 @@ pub struct AppState {
     /// Status message timestamp (for auto-clear)
     pub status_timestamp: Option<std::time::Instant>,
 
+    /// Whether the status message is an error (requires dismiss)
+    pub status_is_error: bool,
+
+    /// Spinner animation frame (0-7 for 8-frame spinner)
+    pub spinner_frame: u8,
+
+    /// Last spinner update time
+    pub spinner_last_update: Option<std::time::Instant>,
+
+    /// Command history for command palette
+    pub command_history: Vec<String>,
+
+    /// Current position in command history
+    pub command_history_pos: Option<usize>,
+
+    /// Response time for last request (milliseconds)
+    pub last_response_time_ms: Option<u64>,
+
     /// Proxy running state
     pub proxy_running: bool,
 
@@ -213,6 +237,9 @@ pub struct AppState {
 
     /// Current response from last request
     pub current_response: Option<CurrentResponse>,
+
+    /// Request tabs (multiple requests can be open)
+    pub request_tabs: RequestTabs,
 
     /// Selected collection item index
     pub selected_collection_item: usize,
@@ -367,9 +394,6 @@ pub struct AppState {
     /// Current intercepted request/response (if any)
     pub intercepted_request: Option<crate::proxy::InterceptedRequest>,
 
-    /// Intercept queue count (pending requests)
-    pub intercept_queue_count: usize,
-
     // ============ Intercept Editing State ============
     /// Current section being edited in intercept dialog
     pub intercept_edit_section: InterceptEditSection,
@@ -435,6 +459,15 @@ pub struct AppState {
     /// Delay between requests (ms)
     pub fuzzer_delay_ms: u64,
 
+    /// Payload encoding for fuzzer
+    pub fuzzer_encoding: crate::fuzzer::PayloadEncoding,
+
+    /// Optional prefix for payloads
+    pub fuzzer_payload_prefix: Option<String>,
+
+    /// Optional suffix for payloads
+    pub fuzzer_payload_suffix: Option<String>,
+
     // ============ Settings UI State ============
     /// Settings section focus
     pub settings_section: SettingsSection,
@@ -483,24 +516,6 @@ pub struct AppState {
     /// Current recon mode
     pub browser_mode: BrowserMode,
 
-    /// Scan targets (hosts/CIDRs to scan)
-    pub browser_scan_targets: String,
-
-    /// Whether a scan is in progress
-    pub browser_scanning: bool,
-
-    /// Scan progress (current / total)
-    pub browser_scan_progress: (usize, usize),
-
-    /// Resolution preset index
-    pub browser_resolution_idx: usize,
-
-    /// Focus within recon view
-    pub browser_focus: BrowserFocus,
-
-    /// Last browsed URL (for display purposes)
-    pub browser_last_url: Option<String>,
-
     /// Pending browser navigation URL (processed in main loop)
     pub browser_pending_navigation: Option<String>,
 
@@ -538,6 +553,45 @@ pub struct AppState {
 
     /// Import cursor position
     pub import_path_cursor: usize,
+
+    // ============ Scripting UI State ============
+    /// Script editor content
+    pub script_content: String,
+
+    /// Script cursor position (byte offset)
+    pub script_cursor: usize,
+
+    /// Script output/console
+    pub script_output: Vec<String>,
+
+    /// Last script execution result
+    pub script_last_result: Option<String>,
+
+    /// Whether script panel is visible
+    pub script_panel_visible: bool,
+
+    // ============ WebSocket UI State ============
+    /// Whether WebSocket panel is visible
+    pub ws_panel_visible: bool,
+
+    /// Selected WebSocket session index
+    pub ws_selected_session: usize,
+
+    /// Selected WebSocket message index
+    pub ws_selected_message: usize,
+
+    // ============ Report UI State ============
+    /// Whether report dialog is visible
+    pub report_dialog_visible: bool,
+
+    /// Selected report format index
+    pub report_format_index: usize,
+
+    /// Report output path
+    pub report_path: String,
+
+    /// Report path cursor position
+    pub report_path_cursor: usize,
 }
 
 /// Browser mode
@@ -546,15 +600,6 @@ pub enum BrowserMode {
     Browse,
     #[default]
     InputUrl,
-    InputScan,
-}
-
-/// Browser panel focus
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum BrowserFocus {
-    #[default]
-    CapturesList,
-    Details,
 }
 
 /// Spider panel focus
@@ -953,6 +998,183 @@ pub struct CurrentResponse {
     pub size: usize,
 }
 
+/// Authentication state bundled together
+#[derive(Debug, Clone, Default)]
+pub struct AuthState {
+    pub auth_type: AuthType,
+    pub username: String,
+    pub password: String,
+    pub token: String,
+    pub api_key_name: String,
+    pub api_key_value: String,
+    pub api_key_location: ApiKeyLocation,
+    pub field_index: usize,
+}
+
+/// A single request tab with all its state
+#[derive(Debug, Clone)]
+pub struct RequestTab {
+    /// Display name (derived from URL or "New Request")
+    pub name: String,
+    /// URL being edited
+    pub url: String,
+    /// Cursor position in URL
+    pub url_cursor: usize,
+    /// HTTP method
+    pub method: String,
+    /// Query parameters
+    pub query_params: crate::tui::widgets::KeyValueEditorState,
+    /// Request headers
+    pub headers: crate::tui::widgets::KeyValueEditorState,
+    /// Request body
+    pub body_content: String,
+    /// Body content type
+    pub body_content_type: BodyContentType,
+    /// Authentication state
+    pub auth: AuthState,
+    /// Response (if any)
+    pub response: Option<CurrentResponse>,
+    /// Whether currently loading
+    pub is_loading: bool,
+    /// Active sub-tab in request editor
+    pub editor_tab: RequestEditorTab,
+    /// Response tab selection
+    pub response_tab: ResponseTab,
+    /// Response scroll position
+    pub response_scroll: usize,
+    /// Request scroll position
+    pub request_scroll: usize,
+    /// Whether showing raw response
+    pub response_raw_mode: bool,
+    /// Response search query
+    pub response_search: String,
+    /// Search match positions (line, col)
+    pub response_search_matches: Vec<(usize, usize)>,
+    /// Current search match index
+    pub current_search_match: usize,
+    /// Whether tab has unsaved changes
+    pub dirty: bool,
+}
+
+impl Default for RequestTab {
+    fn default() -> Self {
+        Self {
+            name: "New Request".to_string(),
+            url: String::new(),
+            url_cursor: 0,
+            method: "GET".to_string(),
+            query_params: crate::tui::widgets::KeyValueEditorState::new(),
+            headers: crate::tui::widgets::KeyValueEditorState::new(),
+            body_content: String::new(),
+            body_content_type: BodyContentType::default(),
+            auth: AuthState::default(),
+            response: None,
+            is_loading: false,
+            editor_tab: RequestEditorTab::default(),
+            response_tab: ResponseTab::default(),
+            response_scroll: 0,
+            request_scroll: 0,
+            response_raw_mode: false,
+            response_search: String::new(),
+            response_search_matches: Vec::new(),
+            current_search_match: 0,
+            dirty: false,
+        }
+    }
+}
+
+impl RequestTab {
+    /// Update the display name based on URL
+    pub fn update_name(&mut self) {
+        if self.url.is_empty() {
+            self.name = "New Request".to_string();
+        } else {
+            // Extract path from URL for display
+            let display = if let Some(path_start) = self.url.find("://") {
+                let after_scheme = &self.url[path_start + 3..];
+                if let Some(path_start) = after_scheme.find('/') {
+                    let path = &after_scheme[path_start..];
+                    // Truncate long paths
+                    if path.len() > 20 {
+                        format!("{}...{}", &path[..8], &path[path.len()-8..])
+                    } else {
+                        path.to_string()
+                    }
+                } else {
+                    after_scheme.to_string()
+                }
+            } else {
+                self.url.clone()
+            };
+            self.name = format!("{} {}", self.method, display);
+        }
+    }
+}
+
+/// Manager for multiple request tabs
+#[derive(Debug, Clone)]
+pub struct RequestTabs {
+    /// All open tabs
+    pub tabs: Vec<RequestTab>,
+    /// Currently active tab index
+    pub active: usize,
+}
+
+impl Default for RequestTabs {
+    fn default() -> Self {
+        let mut tabs = Self {
+            tabs: Vec::new(),
+            active: 0,
+        };
+        // Start with one empty tab
+        tabs.new_tab();
+        tabs
+    }
+}
+
+impl RequestTabs {
+    /// Create a new tab and return mutable reference to it
+    pub fn new_tab(&mut self) -> &mut RequestTab {
+        let tab = RequestTab::default();
+        self.tabs.push(tab);
+        self.active = self.tabs.len() - 1;
+        &mut self.tabs[self.active]
+    }
+
+    /// Close the tab at the given index
+    pub fn close_tab(&mut self, idx: usize) -> bool {
+        if self.tabs.len() <= 1 {
+            return false; // Keep at least one tab
+        }
+        if idx < self.tabs.len() {
+            self.tabs.remove(idx);
+            if self.active >= self.tabs.len() {
+                self.active = self.tabs.len() - 1;
+            } else if self.active > idx {
+                self.active -= 1;
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Get the active tab
+    pub fn active_tab(&self) -> Option<&RequestTab> {
+        self.tabs.get(self.active)
+    }
+
+    /// Get the active tab mutably
+    pub fn active_tab_mut(&mut self) -> Option<&mut RequestTab> {
+        self.tabs.get_mut(self.active)
+    }
+
+    /// Get the number of tabs
+    pub fn len(&self) -> usize {
+        self.tabs.len()
+    }
+}
+
 impl Default for AppState {
     fn default() -> Self {
         Self {
@@ -962,10 +1184,17 @@ impl Default for AppState {
             should_quit: false,
             status_message: None,
             status_timestamp: None,
+            status_is_error: false,
+            spinner_frame: 0,
+            spinner_last_update: None,
+            command_history: Vec::new(),
+            command_history_pos: None,
+            last_response_time_ms: None,
             proxy_running: false,
             scan_progress: None,
             current_request: None,
             current_response: None,
+            request_tabs: RequestTabs::default(),
             selected_collection_item: 0,
             collection_scroll: 0,
             request_scroll: 0,
@@ -1021,7 +1250,6 @@ impl Default for AppState {
             findings_selected_within_host: None,
             intercept_enabled: false,
             intercepted_request: None,
-            intercept_queue_count: 0,
             // Intercept editing state
             intercept_edit_section: InterceptEditSection::default(),
             intercept_url_input: String::new(),
@@ -1045,6 +1273,9 @@ impl Default for AppState {
             fuzzer_focus: FuzzerFocus::default(),
             fuzzer_concurrency: 10,
             fuzzer_delay_ms: 0,
+            fuzzer_encoding: crate::fuzzer::PayloadEncoding::None,
+            fuzzer_payload_prefix: None,
+            fuzzer_payload_suffix: None,
             // Settings UI state
             settings_section: SettingsSection::default(),
             settings_proxy_port: 8080,
@@ -1063,12 +1294,6 @@ impl Default for AppState {
             browser_selected_capture: 0,
             browser_url_input: String::new(),
             browser_mode: BrowserMode::default(),
-            browser_scan_targets: String::new(),
-            browser_scanning: false,
-            browser_scan_progress: (0, 0),
-            browser_resolution_idx: 0,
-            browser_focus: BrowserFocus::default(),
-            browser_last_url: None,
             browser_pending_navigation: None,
             // Spider UI state
             spider_url_input: String::new(),
@@ -1087,6 +1312,115 @@ impl Default for AppState {
             // Import UI state
             import_path_input: String::new(),
             import_path_cursor: 0,
+            // Scripting UI state
+            script_content: String::new(),
+            script_cursor: 0,
+            script_output: Vec::new(),
+            script_last_result: None,
+            script_panel_visible: false,
+            // WebSocket UI state
+            ws_panel_visible: false,
+            ws_selected_session: 0,
+            ws_selected_message: 0,
+            // Report UI state
+            report_dialog_visible: false,
+            report_format_index: 0,
+            report_path: String::new(),
+            report_path_cursor: 0,
+        }
+    }
+}
+
+impl AppState {
+    /// Show a status message (auto-clears after 5 seconds)
+    pub fn show_status(&mut self, msg: impl Into<String>) {
+        self.status_message = Some(msg.into());
+        self.status_timestamp = Some(std::time::Instant::now());
+        self.status_is_error = false;
+    }
+
+    /// Show an error message (requires user dismiss with Esc)
+    pub fn show_error(&mut self, msg: impl Into<String>) {
+        self.status_message = Some(format!("⚠ {} (Esc to dismiss)", msg.into()));
+        self.status_timestamp = Some(std::time::Instant::now());
+        self.status_is_error = true;
+    }
+
+    /// Save current editor state to the active request tab
+    pub fn save_to_active_tab(&mut self) {
+        if let Some(tab) = self.request_tabs.active_tab_mut() {
+            tab.url = self.url_input.clone();
+            tab.url_cursor = self.url_cursor;
+            tab.method = self.request_method.clone();
+            tab.query_params = self.query_params.clone();
+            tab.headers = self.headers.clone();
+            tab.body_content = self.body_content.clone();
+            tab.body_content_type = self.body_content_type;
+            tab.auth.auth_type = self.auth_type;
+            tab.auth.username = self.auth_username.clone();
+            tab.auth.password = self.auth_password.clone();
+            tab.auth.token = self.auth_token.clone();
+            tab.auth.api_key_name = self.auth_api_key_name.clone();
+            tab.auth.api_key_value = self.auth_api_key_value.clone();
+            tab.auth.api_key_location = self.auth_api_key_location;
+            tab.auth.field_index = self.auth_field_index;
+            tab.response = self.current_response.clone();
+            tab.is_loading = self.is_loading;
+            tab.editor_tab = self.request_editor_tab;
+            tab.response_tab = self.response_tab;
+            tab.response_scroll = self.response_scroll;
+            tab.request_scroll = self.request_scroll;
+            tab.response_raw_mode = self.response_raw_mode;
+            tab.response_search = self.response_search.clone();
+            tab.response_search_matches = self.response_search_matches.clone();
+            tab.current_search_match = self.current_search_match;
+            // Mark tab as dirty if it has meaningful content
+            tab.dirty = !tab.url.is_empty() || !tab.body_content.is_empty();
+            // Update tab display name based on URL and method
+            tab.update_name();
+        }
+    }
+
+    /// Load state from the active request tab into editor fields
+    pub fn load_from_active_tab(&mut self) {
+        if let Some(tab) = self.request_tabs.active_tab() {
+            self.url_input = tab.url.clone();
+            self.url_cursor = tab.url_cursor;
+            self.request_method = tab.method.clone();
+            self.query_params = tab.query_params.clone();
+            self.headers = tab.headers.clone();
+            self.body_content = tab.body_content.clone();
+            self.body_content_type = tab.body_content_type;
+            self.auth_type = tab.auth.auth_type;
+            self.auth_username = tab.auth.username.clone();
+            self.auth_password = tab.auth.password.clone();
+            self.auth_token = tab.auth.token.clone();
+            self.auth_api_key_name = tab.auth.api_key_name.clone();
+            self.auth_api_key_value = tab.auth.api_key_value.clone();
+            self.auth_api_key_location = tab.auth.api_key_location;
+            self.auth_field_index = tab.auth.field_index;
+            self.current_response = tab.response.clone();
+            self.is_loading = tab.is_loading;
+            self.request_editor_tab = tab.editor_tab;
+            self.response_tab = tab.response_tab;
+            self.response_scroll = tab.response_scroll;
+            self.request_scroll = tab.request_scroll;
+            self.response_raw_mode = tab.response_raw_mode;
+            self.response_search = tab.response_search.clone();
+            self.response_search_matches = tab.response_search_matches.clone();
+            self.current_search_match = tab.current_search_match;
+        }
+    }
+
+    /// Switch to a different tab with proper state sync
+    pub fn switch_request_tab(&mut self, new_idx: usize) {
+        if new_idx < self.request_tabs.tabs.len() && new_idx != self.request_tabs.active {
+            // Save current state to old tab
+            self.save_to_active_tab();
+            // Switch tab
+            self.request_tabs.active = new_idx;
+            // Load state from new tab
+            self.load_from_active_tab();
         }
     }
 }
@@ -1117,9 +1451,6 @@ pub struct App {
     /// Event channel sender
     event_tx: mpsc::Sender<AppEvent>,
 
-    /// Event channel receiver
-    event_rx: mpsc::Receiver<AppEvent>,
-
     /// Proxy port
     proxy_port: u16,
 }
@@ -1127,7 +1458,7 @@ pub struct App {
 impl App {
     /// Create a new application instance
     pub async fn new(config: Config, proxy_port: u16) -> Result<Self> {
-        let (event_tx, event_rx) = mpsc::channel(256);
+        let (event_tx, _event_rx) = mpsc::channel(256);
 
         let http_client = HttpClient::new(&config)?;
         let scanner = Arc::new(ScanEngine::new(&config));
@@ -1149,7 +1480,6 @@ impl App {
             workspace,
             spider: None,
             event_tx,
-            event_rx,
             proxy_port,
         })
     }
@@ -1313,14 +1643,25 @@ impl App {
                 break;
             }
 
-            // Clear old status messages (after 5 seconds)
+            // Clear old status messages (after 5 seconds, unless it's an error)
+            // Also update spinner animation
             {
                 let mut state = self.state.write();
                 if let Some(timestamp) = state.status_timestamp {
-                    if timestamp.elapsed() > std::time::Duration::from_secs(5) {
+                    // Errors stay until dismissed, regular messages auto-clear after 5 seconds
+                    if !state.status_is_error && timestamp.elapsed() > std::time::Duration::from_secs(5) {
                         state.status_message = None;
                         state.status_timestamp = None;
                     }
+                }
+
+                // Update spinner animation (every 100ms)
+                let should_update = state.spinner_last_update
+                    .map(|t| t.elapsed() > std::time::Duration::from_millis(100))
+                    .unwrap_or(true);
+                if should_update && (state.scanner_running || state.fuzzer_state == crate::fuzzer::FuzzerState::Running || state.spider_state == crate::spider::SpiderState::Running || state.is_loading) {
+                    state.spinner_frame = (state.spinner_frame + 1) % 8;
+                    state.spinner_last_update = Some(std::time::Instant::now());
                 }
             }
 
@@ -1524,15 +1865,51 @@ impl App {
                         match key.code {
                             KeyCode::Esc => {
                                 state.command_input.clear();
+                                state.command_history_pos = None;
                                 state.mode = AppMode::Normal;
                             }
                             KeyCode::Enter => {
                                 let cmd = state.command_input.clone();
+                                // Save to history if non-empty and different from last
+                                if !cmd.trim().is_empty() {
+                                    if state.command_history.last().map(|s| s.as_str()) != Some(cmd.trim()) {
+                                        state.command_history.push(cmd.trim().to_string());
+                                        // Keep history to last 50 commands
+                                        if state.command_history.len() > 50 {
+                                            state.command_history.remove(0);
+                                        }
+                                    }
+                                }
                                 state.command_input.clear();
+                                state.command_history_pos = None;
                                 state.mode = AppMode::Normal;
                                 drop(state);
                                 self.execute_command(&cmd)?;
                                 return Ok(());
+                            }
+                            KeyCode::Up => {
+                                // Navigate backward in history
+                                if !state.command_history.is_empty() {
+                                    let new_pos = match state.command_history_pos {
+                                        None => state.command_history.len().saturating_sub(1),
+                                        Some(pos) => pos.saturating_sub(1),
+                                    };
+                                    state.command_history_pos = Some(new_pos);
+                                    state.command_input = state.command_history[new_pos].clone();
+                                }
+                            }
+                            KeyCode::Down => {
+                                // Navigate forward in history
+                                if let Some(pos) = state.command_history_pos {
+                                    if pos + 1 < state.command_history.len() {
+                                        state.command_history_pos = Some(pos + 1);
+                                        state.command_input = state.command_history[pos + 1].clone();
+                                    } else {
+                                        // At end of history, clear input
+                                        state.command_history_pos = None;
+                                        state.command_input.clear();
+                                    }
+                                }
                             }
                             KeyCode::Backspace => {
                                 state.command_input.pop();
@@ -1557,7 +1934,7 @@ impl App {
                     AppMode::BrowserUrl => {
                         self.handle_browser_url_key(key, &mut state)?;
                     }
-                    AppMode::ProxyDetails => {
+                    AppMode::ProxyDetails | AppMode::Intercept => {
                         self.handle_proxy_details_key(key, &mut state)?;
                     }
                     AppMode::EditInterceptUrl => {
@@ -1586,6 +1963,18 @@ impl App {
                         drop(state);
                         self.handle_scanner_target_key(key).await?;
                     }
+                    AppMode::EditScript => {
+                        drop(state);
+                        self.handle_script_key(key).await?;
+                    }
+                    AppMode::ReportDialog => {
+                        drop(state);
+                        self.handle_report_dialog_key(key)?;
+                    }
+                    AppMode::ViewWebSocket => {
+                        drop(state);
+                        self.handle_websocket_view_key(key)?;
+                    }
                     _ => {}
                 }
             }
@@ -1603,9 +1992,22 @@ impl App {
         use crossterm::event::{KeyCode, KeyModifiers};
 
         match key.code {
-            // Close dialog
+            // Close dialog - but if intercepting, auto-forward the request first
             KeyCode::Esc | KeyCode::Char('q') => {
+                if state.intercepted_request.is_some() {
+                    // Auto-forward intercepted request when exiting
+                    self.sync_intercept_edits(state);
+                    if let Some(req) = state.intercepted_request.take() {
+                        self.resolve_intercept(req.id, crate::proxy::InterceptDecision {
+                            forward: true,
+                            request: req,
+                        });
+                    }
+                    state.status_message = Some("Request auto-forwarded".to_string());
+                    state.status_timestamp = Some(std::time::Instant::now());
+                }
                 state.mode = AppMode::Normal;
+                state.show_proxy_details = false;
             }
             // Switch tabs with Tab or h/l
             KeyCode::Tab | KeyCode::Char('l') | KeyCode::Right => {
@@ -1761,6 +2163,7 @@ impl App {
                     });
                 }
                 state.mode = AppMode::Normal;
+                state.show_proxy_details = false;
                 state.status_message = Some("Request forwarded".to_string());
                 state.status_timestamp = Some(std::time::Instant::now());
             }
@@ -1775,6 +2178,7 @@ impl App {
                     });
                 }
                 state.mode = AppMode::Normal;
+                state.show_proxy_details = false;
                 state.status_message = Some("Request dropped".to_string());
                 state.status_timestamp = Some(std::time::Instant::now());
             }
@@ -2443,6 +2847,11 @@ impl App {
             }
             KeyCode::Char('4') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 state.auth_type = AuthType::ApiKey;
+                state.auth_field_index = 0;
+            }
+            // Cycle auth type with 't'
+            KeyCode::Char('t') => {
+                state.auth_type = state.auth_type.next();
                 state.auth_field_index = 0;
             }
             // Navigate between fields
@@ -3579,6 +3988,46 @@ impl App {
                 state.current_tab = MainTab::Settings;
             }
 
+            // Request tabs management (Ctrl+t: new, Ctrl+w: close)
+            KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if state.current_tab == MainTab::Workspace {
+                    // Save current state before creating new tab
+                    state.save_to_active_tab();
+                    state.request_tabs.new_tab();
+                    // Load fresh state for new tab
+                    state.load_from_active_tab();
+                    state.status_message = Some(format!("New tab ({})", state.request_tabs.len()));
+                    state.status_timestamp = Some(std::time::Instant::now());
+                }
+            }
+            KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if state.current_tab == MainTab::Workspace && state.request_tabs.len() > 1 {
+                    let closed_idx = state.request_tabs.active;
+                    state.request_tabs.close_tab(closed_idx);
+                    // Load state from the new active tab
+                    state.load_from_active_tab();
+                    state.status_message = Some(format!("Closed tab ({})", state.request_tabs.len()));
+                    state.status_timestamp = Some(std::time::Instant::now());
+                }
+            }
+            // Next/prev request tab with >/<
+            KeyCode::Char('>') => {
+                if state.current_tab == MainTab::Workspace && state.request_tabs.len() > 1 {
+                    let new_idx = (state.request_tabs.active + 1) % state.request_tabs.tabs.len();
+                    state.switch_request_tab(new_idx);
+                }
+            }
+            KeyCode::Char('<') => {
+                if state.current_tab == MainTab::Workspace && state.request_tabs.len() > 1 {
+                    let new_idx = if state.request_tabs.active == 0 {
+                        state.request_tabs.tabs.len() - 1
+                    } else {
+                        state.request_tabs.active - 1
+                    };
+                    state.switch_request_tab(new_idx);
+                }
+            }
+
             // Tab navigation with H/L (shift+h/l), or toggle history in workspace
             KeyCode::Char('H') => {
                 if state.focus == Focus::Workspace {
@@ -3648,6 +4097,10 @@ impl App {
                         if !state.browser_captures.is_empty() {
                             state.browser_selected_capture = (state.browser_selected_capture + 1).min(state.browser_captures.len() - 1);
                         }
+                        return Ok(());
+                    }
+                    MainTab::Settings => {
+                        state.settings_section = state.settings_section.next();
                         return Ok(());
                     }
                     _ => {}
@@ -3738,7 +4191,6 @@ impl App {
                             }
                         }
                     }
-                    _ => {}
                 }
             }
             KeyCode::Char('k') | KeyCode::Up => {
@@ -3757,6 +4209,10 @@ impl App {
                     }
                     MainTab::Browser => {
                         state.browser_selected_capture = state.browser_selected_capture.saturating_sub(1);
+                        return Ok(());
+                    }
+                    MainTab::Settings => {
+                        state.settings_section = state.settings_section.prev();
                         return Ok(());
                     }
                     _ => {}
@@ -3825,7 +4281,6 @@ impl App {
                             }
                         }
                     }
-                    _ => {}
                 }
             }
             KeyCode::Char('l') | KeyCode::Right => {
@@ -4008,6 +4463,17 @@ impl App {
                 }
             }
 
+            // ============ Report Generation ============
+            // Export report dialog (Ctrl+E) - must be before plain 'e'
+            KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                state.report_dialog_visible = true;
+                state.mode = AppMode::ReportDialog;
+                state.report_path = format!("ancarna_report_{}.html", chrono::Utc::now().format("%Y%m%d_%H%M%S"));
+                state.report_path_cursor = state.report_path.len();
+                state.status_message = Some("Export report: Enter path, Tab to change format".to_string());
+                state.status_timestamp = Some(std::time::Instant::now());
+            }
+
             // Quick URL edit with 'e' (always edits URL)
             KeyCode::Char('e') => {
                 if state.focus == Focus::RequestEditor {
@@ -4044,6 +4510,7 @@ impl App {
                 {
                     // Open proxy details dialog
                     state.mode = AppMode::ProxyDetails;
+                    state.show_proxy_details = true;
                     state.proxy_details_tab = ProxyDetailsTab::Request;
                     state.proxy_details_scroll = 0;
                 } else if (state.focus == Focus::Findings || state.current_tab == MainTab::Scanner)
@@ -4092,6 +4559,16 @@ impl App {
                         _ => {}
                     }
                 }
+            }
+
+            // Stop active scan (Esc on Scanner tab when running) - must be before generic Esc
+            KeyCode::Esc if state.current_tab == MainTab::Scanner && state.scanner_running => {
+                self.scanner.stop_scan();
+                state.scanner_running = false;
+                state.mode = AppMode::Normal;
+                state.scan_progress = None;
+                state.status_message = Some("Scan stopped".to_string());
+                state.status_timestamp = Some(std::time::Instant::now());
             }
 
             // Escape to normal mode
@@ -4353,6 +4830,7 @@ impl App {
             }
 
             // Forward intercepted request (f when viewing intercepted)
+            // Note: This is a fallback - primary handling is in handle_proxy_details_key
             KeyCode::Char('f') if state.intercepted_request.is_some() && state.current_tab == MainTab::Proxy => {
                 if let Some(req) = state.intercepted_request.take() {
                     let _ = state; // Release lock before resolving
@@ -4361,12 +4839,15 @@ impl App {
                         request: req,
                     });
                     let mut state = self.state.write();
+                    state.mode = AppMode::Normal;
+                    state.show_proxy_details = false;
                     state.status_message = Some("Request forwarded".to_string());
                     state.status_timestamp = Some(std::time::Instant::now());
                 }
             }
 
             // Drop intercepted request (x when viewing intercepted)
+            // Note: This is a fallback - primary handling is in handle_proxy_details_key
             KeyCode::Char('x') if state.intercepted_request.is_some() && state.current_tab == MainTab::Proxy => {
                 if let Some(mut req) = state.intercepted_request.take() {
                     req.drop = true;
@@ -4376,6 +4857,8 @@ impl App {
                         request: req,
                     });
                     let mut state = self.state.write();
+                    state.mode = AppMode::Normal;
+                    state.show_proxy_details = false;
                     state.status_message = Some("Request dropped".to_string());
                     state.status_timestamp = Some(std::time::Instant::now());
                 }
@@ -4389,9 +4872,15 @@ impl App {
             }
 
             // ============ Fuzzer Tab Keyboard Handlers ============
-            // Cycle payload set (w)
+            // Cycle payload set forward (w)
             KeyCode::Char('w') if state.current_tab == MainTab::Fuzzer => {
                 state.fuzzer_payload_set = state.fuzzer_payload_set.next();
+                state.status_message = Some(format!("Payload set: {}", state.fuzzer_payload_set.name()));
+                state.status_timestamp = Some(std::time::Instant::now());
+            }
+            // Cycle payload set backward (W)
+            KeyCode::Char('W') if state.current_tab == MainTab::Fuzzer => {
+                state.fuzzer_payload_set = state.fuzzer_payload_set.prev();
                 state.status_message = Some(format!("Payload set: {}", state.fuzzer_payload_set.name()));
                 state.status_timestamp = Some(std::time::Instant::now());
             }
@@ -4414,6 +4903,20 @@ impl App {
             KeyCode::Char('-') if state.current_tab == MainTab::Fuzzer => {
                 state.fuzzer_concurrency = state.fuzzer_concurrency.saturating_sub(5).max(1);
                 state.status_message = Some(format!("Concurrency: {}", state.fuzzer_concurrency));
+                state.status_timestamp = Some(std::time::Instant::now());
+            }
+
+            // Cycle payload encoding forward (.)
+            KeyCode::Char('.') if state.current_tab == MainTab::Fuzzer => {
+                state.fuzzer_encoding = state.fuzzer_encoding.next();
+                state.status_message = Some(format!("Encoding: {}", state.fuzzer_encoding.name()));
+                state.status_timestamp = Some(std::time::Instant::now());
+            }
+
+            // Cycle payload encoding backward (,)
+            KeyCode::Char(',') if state.current_tab == MainTab::Fuzzer => {
+                state.fuzzer_encoding = state.fuzzer_encoding.prev();
+                state.status_message = Some(format!("Encoding: {}", state.fuzzer_encoding.name()));
                 state.status_timestamp = Some(std::time::Instant::now());
             }
 
@@ -4465,6 +4968,51 @@ impl App {
                 }
             }
 
+            // Export fuzzer results to CSV (x)
+            KeyCode::Char('x') if state.current_tab == MainTab::Fuzzer && !state.fuzzer_results.is_empty() => {
+                // Create a FuzzResultSet from current results for export
+                let mut result_set = crate::fuzzer::FuzzResultSet::new();
+                result_set.results = state.fuzzer_results.clone();
+                let csv = result_set.export_csv();
+
+                let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+                let filename = format!("fuzzer_results_{}.csv", timestamp);
+                match std::fs::write(&filename, &csv) {
+                    Ok(_) => {
+                        state.status_message = Some(format!("Exported {} results to {}", state.fuzzer_results.len(), filename));
+                    }
+                    Err(e) => {
+                        state.status_message = Some(format!("Export failed: {}", e));
+                    }
+                }
+                state.status_timestamp = Some(std::time::Instant::now());
+            }
+
+            // Export fuzzer results to JSON (X)
+            KeyCode::Char('X') if state.current_tab == MainTab::Fuzzer && !state.fuzzer_results.is_empty() => {
+                // Create a FuzzResultSet from current results for export
+                let mut result_set = crate::fuzzer::FuzzResultSet::new();
+                result_set.results = state.fuzzer_results.clone();
+                match result_set.export_json(true) {
+                    Ok(json) => {
+                        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+                        let filename = format!("fuzzer_results_{}.json", timestamp);
+                        match std::fs::write(&filename, &json) {
+                            Ok(_) => {
+                                state.status_message = Some(format!("Exported {} results to {}", state.fuzzer_results.len(), filename));
+                            }
+                            Err(e) => {
+                                state.status_message = Some(format!("Export failed: {}", e));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        state.status_message = Some(format!("JSON export failed: {}", e));
+                    }
+                }
+                state.status_timestamp = Some(std::time::Instant::now());
+            }
+
             // ============ Spider Tab Keyboard Handlers ============
             // Adjust spider config
             KeyCode::Char('+') | KeyCode::Char('=') if state.current_tab == MainTab::Spider && state.spider_focus == SpiderFocus::Config => {
@@ -4495,6 +5043,41 @@ impl App {
                 state.import_path_cursor = 0;
             }
 
+            // ============ Scripting UI ============
+            // Toggle script panel (S on Scanner tab)
+            KeyCode::Char('S') if state.current_tab == MainTab::Scanner => {
+                state.script_panel_visible = !state.script_panel_visible;
+                if state.script_panel_visible {
+                    state.mode = AppMode::EditScript;
+                    state.status_message = Some("Script panel opened - Ctrl+Enter to run".to_string());
+                } else {
+                    state.mode = AppMode::Normal;
+                    state.status_message = Some("Script panel closed".to_string());
+                }
+                state.status_timestamp = Some(std::time::Instant::now());
+            }
+
+            // ============ WebSocket UI ============
+            // Toggle WebSocket panel (W on Proxy tab)
+            KeyCode::Char('W') if state.current_tab == MainTab::Proxy => {
+                state.ws_panel_visible = !state.ws_panel_visible;
+                if state.ws_panel_visible {
+                    state.mode = AppMode::ViewWebSocket;
+                    state.status_message = Some("WebSocket panel opened - j/k:nav q:close".to_string());
+                } else {
+                    state.mode = AppMode::Normal;
+                    state.status_message = Some("WebSocket panel closed".to_string());
+                }
+                state.status_timestamp = Some(std::time::Instant::now());
+            }
+
+            // Dismiss error message (Escape when error is shown)
+            KeyCode::Esc if state.status_is_error => {
+                state.status_message = None;
+                state.status_timestamp = None;
+                state.status_is_error = false;
+            }
+
             // Quit
             KeyCode::Char('q') => {
                 state.should_quit = true;
@@ -4516,9 +5099,13 @@ impl App {
             return Ok(());
         }
 
-        // Queue the request for user review
+        // Store the request for user review
         state.intercepted_request = Some(request.clone());
-        state.intercept_queue_count += 1;
+
+        // Set intercept mode and switch to proxy tab
+        state.mode = AppMode::Intercept;
+        state.current_tab = MainTab::Proxy;
+        state.show_proxy_details = true;
 
         // Initialize edit buffers with request data
         state.intercept_url_input = request.url.clone();
@@ -4541,7 +5128,7 @@ impl App {
         if state.current_tab != MainTab::Proxy {
             state.current_tab = MainTab::Proxy;
         }
-        state.mode = AppMode::ProxyDetails;
+        // Note: mode is already AppMode::Intercept from line 4918
         state.proxy_details_tab = ProxyDetailsTab::Request;
 
         // Show status message
@@ -4796,6 +5383,286 @@ impl App {
                 }
                 state.scanner_target_url.insert(byte_idx, c);
                 state.scanner_target_cursor += 1;
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    /// Handle key events in script editing mode
+    async fn handle_script_key(&mut self, key: crossterm::event::KeyEvent) -> Result<()> {
+        use crossterm::event::{KeyCode, KeyModifiers};
+
+        let mut state = self.state.write();
+
+        match key.code {
+            KeyCode::Esc => {
+                state.mode = AppMode::Normal;
+                state.script_panel_visible = false;
+            }
+            // Ctrl+Enter to run script
+            KeyCode::Enter if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                let script = state.script_content.clone();
+                drop(state);
+                self.run_script(&script).await?;
+                return Ok(());
+            }
+            KeyCode::Enter => {
+                // Regular enter adds newline
+                let mut byte_idx = 0;
+                let mut count = 0;
+                let state_ref = &mut *state;
+                for (i, _) in state_ref.script_content.char_indices() {
+                    if count == state_ref.script_cursor {
+                        byte_idx = i;
+                        break;
+                    }
+                    count += 1;
+                }
+                if count < state_ref.script_cursor {
+                    byte_idx = state_ref.script_content.len();
+                }
+                state_ref.script_content.insert(byte_idx, '\n');
+                state_ref.script_cursor += 1;
+            }
+            KeyCode::Backspace => {
+                if state.script_cursor > 0 {
+                    let mut byte_idx = 0;
+                    let mut char_count = 0;
+                    for (i, _) in state.script_content.char_indices() {
+                        if char_count == state.script_cursor - 1 {
+                            byte_idx = i;
+                            break;
+                        }
+                        char_count += 1;
+                    }
+                    let next_byte_idx = state.script_content[byte_idx..].char_indices()
+                        .nth(1)
+                        .map(|(i, _)| byte_idx + i)
+                        .unwrap_or(state.script_content.len());
+                    state.script_content.replace_range(byte_idx..next_byte_idx, "");
+                    state.script_cursor -= 1;
+                }
+            }
+            KeyCode::Left => {
+                state.script_cursor = state.script_cursor.saturating_sub(1);
+            }
+            KeyCode::Right => {
+                let char_count = state.script_content.chars().count();
+                state.script_cursor = (state.script_cursor + 1).min(char_count);
+            }
+            KeyCode::Char(c) => {
+                let mut byte_idx = 0;
+                let mut count = 0;
+                for (i, _) in state.script_content.char_indices() {
+                    if count == state.script_cursor {
+                        byte_idx = i;
+                        break;
+                    }
+                    count += 1;
+                }
+                if count < state.script_cursor {
+                    byte_idx = state.script_content.len();
+                }
+                state.script_content.insert(byte_idx, c);
+                state.script_cursor += 1;
+            }
+            KeyCode::Tab => {
+                // Insert 2 spaces for tab
+                let mut byte_idx = 0;
+                let mut count = 0;
+                for (i, _) in state.script_content.char_indices() {
+                    if count == state.script_cursor {
+                        byte_idx = i;
+                        break;
+                    }
+                    count += 1;
+                }
+                if count < state.script_cursor {
+                    byte_idx = state.script_content.len();
+                }
+                state.script_content.insert_str(byte_idx, "  ");
+                state.script_cursor += 2;
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    /// Run a JavaScript script
+    async fn run_script(&mut self, script: &str) -> Result<()> {
+        let mut state = self.state.write();
+        state.script_output.clear();
+        state.script_output.push(format!("Running script at {}...", chrono::Utc::now().format("%H:%M:%S")));
+        drop(state);
+
+        let mut context = crate::scripting::ScriptContext::new(5000);
+        let result = context.execute(script);
+
+        let mut state = self.state.write();
+        match result {
+            Ok(script_result) => {
+                if script_result.success {
+                    state.script_output.push("Script executed successfully".to_string());
+                    if let Some(value) = &script_result.value {
+                        state.script_output.push(format!("Result: {}", value));
+                    }
+                    state.script_last_result = script_result.value;
+                    state.status_message = Some("Script executed successfully".to_string());
+                } else {
+                    state.script_output.push(format!("Script error: {}", script_result.error.as_deref().unwrap_or("Unknown error")));
+                    state.status_message = Some("Script execution failed".to_string());
+                }
+            }
+            Err(e) => {
+                state.script_output.push(format!("Execution error: {}", e));
+                state.status_message = Some(format!("Script error: {}", e));
+            }
+        }
+        state.status_timestamp = Some(std::time::Instant::now());
+
+        Ok(())
+    }
+
+    /// Handle key events in report dialog mode
+    fn handle_report_dialog_key(&mut self, key: crossterm::event::KeyEvent) -> Result<()> {
+        use crossterm::event::KeyCode;
+
+        let mut state = self.state.write();
+
+        match key.code {
+            KeyCode::Esc => {
+                state.mode = AppMode::Normal;
+                state.report_dialog_visible = false;
+            }
+            KeyCode::Tab => {
+                // Cycle through report formats
+                state.report_format_index = (state.report_format_index + 1) % 4;
+                let formats = ["HTML", "JSON", "CSV", "Markdown"];
+                state.status_message = Some(format!("Format: {}", formats[state.report_format_index]));
+                state.status_timestamp = Some(std::time::Instant::now());
+            }
+            KeyCode::Enter => {
+                let path = state.report_path.clone();
+                let format_idx = state.report_format_index;
+                let findings = state.findings.clone();
+                let target = state.scanner_target_url.clone();
+                state.mode = AppMode::Normal;
+                state.report_dialog_visible = false;
+                drop(state);
+
+                // Generate report
+                self.generate_report(&path, format_idx, findings, target)?;
+                return Ok(());
+            }
+            KeyCode::Backspace => {
+                if state.report_path_cursor > 0 {
+                    let mut byte_idx = 0;
+                    let mut char_count = 0;
+                    for (i, _) in state.report_path.char_indices() {
+                        if char_count == state.report_path_cursor - 1 {
+                            byte_idx = i;
+                            break;
+                        }
+                        char_count += 1;
+                    }
+                    let next_byte_idx = state.report_path[byte_idx..].char_indices()
+                        .nth(1)
+                        .map(|(i, _)| byte_idx + i)
+                        .unwrap_or(state.report_path.len());
+                    state.report_path.replace_range(byte_idx..next_byte_idx, "");
+                    state.report_path_cursor -= 1;
+                }
+            }
+            KeyCode::Left => {
+                state.report_path_cursor = state.report_path_cursor.saturating_sub(1);
+            }
+            KeyCode::Right => {
+                let char_count = state.report_path.chars().count();
+                state.report_path_cursor = (state.report_path_cursor + 1).min(char_count);
+            }
+            KeyCode::Char(c) => {
+                let mut byte_idx = 0;
+                let mut count = 0;
+                for (i, _) in state.report_path.char_indices() {
+                    if count == state.report_path_cursor {
+                        byte_idx = i;
+                        break;
+                    }
+                    count += 1;
+                }
+                if count < state.report_path_cursor {
+                    byte_idx = state.report_path.len();
+                }
+                state.report_path.insert(byte_idx, c);
+                state.report_path_cursor += 1;
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    /// Generate and save a report
+    fn generate_report(&self, path: &str, format_idx: usize, findings: Vec<crate::scanner::Finding>, target: String) -> Result<()> {
+        use crate::reporting::{ReportMetadata, ScanReport};
+
+        let metadata = ReportMetadata {
+            target,
+            ..Default::default()
+        };
+        let report = ScanReport::new(findings, metadata);
+
+        let content = match format_idx {
+            0 => report.to_html()?,
+            1 => report.to_json()?,
+            2 => report.to_csv()?,
+            3 => report.to_markdown()?,
+            _ => report.to_html()?,
+        };
+
+        std::fs::write(path, &content)?;
+
+        let mut state = self.state.write();
+        state.status_message = Some(format!("Report saved to {}", path));
+        state.status_timestamp = Some(std::time::Instant::now());
+
+        Ok(())
+    }
+
+    /// Handle key events in WebSocket view mode
+    fn handle_websocket_view_key(&mut self, key: crossterm::event::KeyEvent) -> Result<()> {
+        use crossterm::event::KeyCode;
+
+        let mut state = self.state.write();
+
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => {
+                state.mode = AppMode::Normal;
+                state.ws_panel_visible = false;
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                // Move down in message list
+                state.ws_selected_message = state.ws_selected_message.saturating_add(1);
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                // Move up in message list
+                state.ws_selected_message = state.ws_selected_message.saturating_sub(1);
+            }
+            KeyCode::Tab => {
+                // Switch between sessions and messages
+                // For now, just cycle through sessions
+                state.ws_selected_session = state.ws_selected_session.saturating_add(1);
+                state.ws_selected_message = 0;
+            }
+            KeyCode::Char('c') => {
+                // Clear selection
+                state.ws_selected_session = 0;
+                state.ws_selected_message = 0;
+                state.status_message = Some("Selection cleared".to_string());
+                state.status_timestamp = Some(std::time::Instant::now());
             }
             _ => {}
         }
@@ -5195,6 +6062,9 @@ impl App {
             follow_redirects: true,
             max_response_size: 10 * 1024 * 1024,
             length_variance_threshold: 10.0,
+            encoding: self.state.read().fuzzer_encoding,
+            payload_prefix: self.state.read().fuzzer_payload_prefix.clone(),
+            payload_suffix: self.state.read().fuzzer_payload_suffix.clone(),
         };
 
         // Update state to show running
@@ -5443,11 +6313,6 @@ impl App {
         Ok(())
     }
 
-    /// Get event sender for external use
-    pub fn event_sender(&self) -> mpsc::Sender<AppEvent> {
-        self.event_tx.clone()
-    }
-
     /// Get a flat list of all collection items for navigation
     /// Returns tuples of (depth, is_folder, name, Option<Request>)
     pub fn get_collection_items(&self) -> Vec<CollectionNavigationItem> {
@@ -5578,54 +6443,6 @@ impl App {
                 }
             }
         }
-    }
-
-    /// Get filtered proxy history items (supports !pattern for exclusion)
-    pub fn get_filtered_proxy_history(&self) -> Vec<ProxyHistoryItem> {
-        let state = self.state.read();
-        if state.proxy_filter.is_empty() {
-            return state.proxy_history.clone();
-        }
-
-        // Parse filter into include and exclude patterns
-        let mut include_patterns: Vec<regex::Regex> = Vec::new();
-        let mut exclude_patterns: Vec<regex::Regex> = Vec::new();
-
-        for part in state.proxy_filter.split_whitespace() {
-            if let Some(pattern) = part.strip_prefix('!') {
-                if !pattern.is_empty() {
-                    if let Ok(re) = regex::Regex::new(&format!("(?i){}", regex::escape(pattern))) {
-                        exclude_patterns.push(re);
-                    }
-                }
-            } else if !part.is_empty() {
-                if let Ok(re) = regex::Regex::new(&format!("(?i){}", regex::escape(part))) {
-                    include_patterns.push(re);
-                }
-            }
-        }
-
-        state.proxy_history
-            .iter()
-            .filter(|item| {
-                let searchable = format!("{} {} {}", item.host, item.url, item.method);
-
-                // Check exclusions first
-                for re in &exclude_patterns {
-                    if re.is_match(&searchable) {
-                        return false;
-                    }
-                }
-
-                // Check inclusions (if any patterns specified)
-                if include_patterns.is_empty() {
-                    true
-                } else {
-                    include_patterns.iter().any(|re| re.is_match(&searchable))
-                }
-            })
-            .cloned()
-            .collect()
     }
 
     /// Load a request from the collection at the given index

@@ -1,5 +1,7 @@
 //! HAR (HTTP Archive) import
 
+#![allow(dead_code)]
+
 use anyhow::{Context, Result};
 use serde::Deserialize;
 

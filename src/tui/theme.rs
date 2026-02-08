@@ -1,5 +1,7 @@
 //! Theme and color definitions
 
+#![allow(dead_code)]
+
 use ratatui::style::Color;
 
 /// Color theme for the TUI

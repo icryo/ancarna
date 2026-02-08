@@ -1,5 +1,7 @@
 //! Tree navigator widget for workspace/collection browsing
 
+#![allow(dead_code)]
+
 use ratatui::{
     layout::Rect,
     style::Style,

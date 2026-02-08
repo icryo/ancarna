@@ -2,6 +2,8 @@
 //!
 //! Handles all TUI rendering and layout using Ratatui.
 
+#![allow(dead_code)]
+
 mod layout;
 mod terminal;
 mod theme;
@@ -14,7 +16,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Tabs},
+    widgets::{Block, Borders, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Tabs},
     Frame,
 };
 
@@ -56,7 +58,7 @@ pub fn render(frame: &mut Frame, app: &App) {
         .split(frame.area());
 
     // Render header with tabs
-    render_header(frame, chunks[0], &state.current_tab, &theme);
+    render_header(frame, chunks[0], app, &state.current_tab, &theme);
 
     // Render main content based on current tab
     match state.current_tab {
@@ -78,7 +80,7 @@ pub fn render(frame: &mut Frame, app: &App) {
     if state.mode == AppMode::Help {
         render_help_dialog(frame, &theme);
     } else if state.mode == AppMode::Command {
-        render_command_palette(frame, &theme);
+        render_command_palette(frame, app, &theme);
     } else if state.mode == AppMode::ConfirmDelete {
         render_confirm_delete_dialog(frame, app, &theme);
     } else if state.mode == AppMode::Rename {
@@ -95,6 +97,15 @@ pub fn render(frame: &mut Frame, app: &App) {
     } else if state.mode == AppMode::FindingDetails {
         drop(state);
         render_finding_details_dialog(frame, app, &theme);
+    } else if state.mode == AppMode::EditScript {
+        drop(state);
+        render_script_panel(frame, app, &theme);
+    } else if state.mode == AppMode::ReportDialog {
+        drop(state);
+        render_report_dialog(frame, app, &theme);
+    } else if state.mode == AppMode::ViewWebSocket {
+        drop(state);
+        render_websocket_panel(frame, app, &theme);
     }
 }
 
@@ -109,12 +120,31 @@ fn render_size_warning(frame: &mut Frame, area: Rect, _theme: &Theme) {
     frame.render_widget(warning, area);
 }
 
-fn render_header(frame: &mut Frame, area: Rect, current_tab: &MainTab, theme: &Theme) {
-    // Show numbered shortcuts: "1:Workspace", "2:Proxy", etc.
+fn render_header(frame: &mut Frame, area: Rect, app: &App, current_tab: &MainTab, theme: &Theme) {
+    let state = app.state.read();
+
+    // Show numbered shortcuts with badges: "1:Workspace", "2:Proxy (15)", etc.
     let titles: Vec<String> = MainTab::all()
         .iter()
         .enumerate()
-        .map(|(i, t)| format!("{}:{}", i + 1, t.name()))
+        .map(|(i, t)| {
+            let name = t.name();
+            match t {
+                MainTab::Proxy if !state.proxy_history.is_empty() => {
+                    format!("{}:{} ({})", i + 1, name, state.proxy_history.len())
+                }
+                MainTab::Scanner if !state.findings.is_empty() => {
+                    format!("{}:{} ({})", i + 1, name, state.findings.len())
+                }
+                MainTab::Fuzzer if !state.fuzzer_results.is_empty() => {
+                    format!("{}:{} ({})", i + 1, name, state.fuzzer_results.len())
+                }
+                MainTab::Spider if !state.spider_discovered.is_empty() => {
+                    format!("{}:{} ({})", i + 1, name, state.spider_discovered.len())
+                }
+                _ => format!("{}:{}", i + 1, name),
+            }
+        })
         .collect();
 
     let tabs = Tabs::new(titles)
@@ -148,14 +178,11 @@ fn render_workspace_view(frame: &mut Frame, area: Rect, app: &App, theme: &Theme
     // Render URL bar
     render_url_bar(frame, vertical[0], app, theme);
 
-    // Three-column layout for panels
+    // Three-column layout for panels (adaptive based on width)
+    let constraints = layout::Layouts::workspace_constraints(vertical[1].width);
     let columns = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(20), // Collections
-            Constraint::Percentage(40), // Request
-            Constraint::Percentage(40), // Response
-        ])
+        .constraints(constraints)
         .split(vertical[1]);
 
     render_collections_panel(frame, columns[0], app, state.focus == Focus::Workspace, theme);
@@ -183,6 +210,13 @@ fn render_url_bar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         .fg(method_color(&state.request_method))
         .add_modifier(Modifier::BOLD);
 
+    // URL validation
+    let url_valid = if state.url_input.is_empty() {
+        true // Empty is ok, not an error
+    } else {
+        state.url_input.starts_with("http://") || state.url_input.starts_with("https://")
+    };
+
     let url_display = if state.url_input.is_empty() {
         if is_editing {
             Span::styled("", Style::default())
@@ -190,12 +224,20 @@ fn render_url_bar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
             Span::styled("Enter URL (press 'e' to edit)", Style::default().fg(theme.muted))
         }
     } else {
-        Span::styled(&state.url_input, Style::default().fg(theme.fg))
+        let color = if url_valid { theme.fg } else { Color::Red };
+        Span::styled(&state.url_input, Style::default().fg(color))
     };
 
     // Cursor for edit mode
     let cursor = if is_editing {
         Span::styled("█", Style::default().fg(theme.accent).add_modifier(Modifier::SLOW_BLINK))
+    } else {
+        Span::raw("")
+    };
+
+    // Validation hint when editing
+    let validation_hint = if is_editing && !state.url_input.is_empty() && !url_valid {
+        Span::styled(" ⚠ needs http:// or https:// ", Style::default().fg(Color::Red))
     } else {
         Span::raw("")
     };
@@ -221,6 +263,7 @@ fn render_url_bar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         Span::raw(" "),
         url_display,
         cursor,
+        validation_hint,
         Span::raw(" "),
         Span::styled("│", Style::default().fg(theme.border)),
         Span::styled(format!(" {} ", env_name), env_style),
@@ -330,29 +373,16 @@ fn render_collections_panel(frame: &mut Frame, area: Rect, app: &App, focused: b
     if nav_items.is_empty() {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            "  Welcome to Ancarna!",
+            " Welcome!",
             Style::default().fg(theme.accent).add_modifier(Modifier::BOLD),
         )));
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            "  No collections yet",
-            Style::default().fg(theme.muted),
-        )));
-        lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
-            "  Quick Start:",
-            Style::default().fg(theme.fg),
-        )));
-        lines.push(Line::from(Span::styled(
-            "  • Press 'l' to go to request editor",
+            " l: editor",
             Style::default().fg(theme.muted),
         )));
         lines.push(Line::from(Span::styled(
-            "  • Enter a URL and press Enter to send",
-            Style::default().fg(theme.muted),
-        )));
-        lines.push(Line::from(Span::styled(
-            "  • Press '?' for keyboard help",
+            " ?: help",
             Style::default().fg(theme.muted),
         )));
     } else {
@@ -544,6 +574,71 @@ fn render_collections_panel(frame: &mut Frame, area: Rect, app: &App, focused: b
     }
 }
 
+/// Render the request tabs bar showing all open request tabs
+fn render_request_tabs_bar(frame: &mut Frame, area: Rect, tabs: &crate::app::RequestTabs, theme: &Theme) {
+    let mut spans = Vec::new();
+    let available_width = area.width as usize;
+    let mut used_width = 5; // Reserve space for [+]
+
+    for (idx, tab) in tabs.tabs.iter().enumerate() {
+        let is_active = idx == tabs.active;
+
+        // Format: [METHOD path] or [New]
+        let label = if tab.url.is_empty() {
+            "New".to_string()
+        } else {
+            // Show method + abbreviated path
+            let path = if let Some(pos) = tab.url.find("://") {
+                let after = &tab.url[pos + 3..];
+                if let Some(slash) = after.find('/') {
+                    safe_truncate(&after[slash..], 12)
+                } else {
+                    "/".to_string()
+                }
+            } else {
+                safe_truncate(&tab.url, 12)
+            };
+            let method = safe_truncate(&tab.method, 3);
+            format!("{} {}", method, path)
+        };
+
+        // Check if we have space for this tab
+        let tab_width = label.chars().count() + 3; // brackets/spaces
+        if used_width + tab_width > available_width && idx > 0 {
+            // Show overflow indicator
+            spans.push(Span::styled(
+                format!(" +{}", tabs.tabs.len() - idx),
+                Style::default().fg(theme.muted),
+            ));
+            break;
+        }
+        used_width += tab_width;
+
+        // Add dirty indicator
+        let dirty_marker = if tab.dirty { "*" } else { "" };
+
+        if is_active {
+            spans.push(Span::styled(
+                format!("[{}{}]", label, dirty_marker),
+                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD),
+            ));
+        } else {
+            spans.push(Span::styled(
+                format!(" {}{} ", label, dirty_marker),
+                Style::default().fg(theme.muted),
+            ));
+        }
+    }
+
+    // Add [+] for new tab if space permits
+    if used_width + 5 <= available_width {
+        spans.push(Span::styled(" [+] ", Style::default().fg(theme.muted)));
+    }
+
+    let line = Line::from(spans);
+    frame.render_widget(Paragraph::new(line), area);
+}
+
 fn render_request_panel(frame: &mut Frame, area: Rect, app: &App, focused: bool, theme: &Theme) {
     use crate::app::RequestEditorTab;
 
@@ -564,20 +659,24 @@ fn render_request_panel(frame: &mut Frame, area: Rect, app: &App, focused: bool,
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    if inner.height < 4 {
+    if inner.height < 5 {
         return;
     }
 
-    // Layout: tabs (1 line), content (rest)
+    // Layout: request tabs bar (1 line), content tabs (1 line), content (rest)
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // Tabs
+            Constraint::Length(1), // Request tabs bar
+            Constraint::Length(1), // Content tabs (Params/Headers/Body/Auth)
             Constraint::Min(1),    // Content
         ])
         .split(inner);
 
-    // Render tabs
+    // Render request tabs bar
+    render_request_tabs_bar(frame, chunks[0], &state.request_tabs, theme);
+
+    // Render content tabs (Params/Headers/Body/Auth)
     let tabs: Vec<Span> = RequestEditorTab::all()
         .iter()
         .map(|tab| {
@@ -597,10 +696,10 @@ fn render_request_panel(frame: &mut Frame, area: Rect, app: &App, focused: bool,
         .collect();
 
     let tab_line = Line::from(tabs);
-    frame.render_widget(Paragraph::new(tab_line), chunks[0]);
+    frame.render_widget(Paragraph::new(tab_line), chunks[1]);
 
     // Render content based on active tab
-    let content_area = chunks[1];
+    let content_area = chunks[2];
 
     match state.request_editor_tab {
         RequestEditorTab::Params => {
@@ -1187,10 +1286,35 @@ fn render_response_panel(frame: &mut Frame, area: Rect, app: &App, focused: bool
     let total_lines = lines.len();
     let scroll_offset = state.response_scroll.min(total_lines.saturating_sub(visible_height));
 
+    // Build title with response time if available
+    let title = if state.is_loading {
+        const SPINNER: [&str; 8] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"];
+        let spinner = SPINNER[state.spinner_frame as usize % 8];
+        Line::from(vec![
+            Span::styled(" Response ", Style::default().fg(if focused { theme.accent } else { theme.fg })),
+            Span::styled(spinner, Style::default().fg(Color::Yellow)),
+            Span::styled(" loading... ", Style::default().fg(Color::Yellow)),
+        ])
+    } else if let Some(response) = &state.current_response {
+        Line::from(vec![
+            Span::styled(" Response ", Style::default().fg(if focused { theme.accent } else { theme.fg })),
+            Span::styled(format!("({}ms) ", response.duration_ms), Style::default().fg(theme.muted)),
+        ])
+    } else {
+        Line::from(Span::styled(" Response ", Style::default().fg(if focused { theme.accent } else { theme.fg })))
+    };
+
+    // Focus indicator with bold title
+    let title_style = if focused {
+        Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(theme.fg)
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(border_style)
-        .title(Span::styled(" Response ", Style::default().fg(if focused { theme.accent } else { theme.fg })));
+        .title(title);
 
     let content = Paragraph::new(lines)
         .block(block)
@@ -1319,7 +1443,7 @@ fn render_proxy_view(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
     let history_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(if state.focus == Focus::ProxyHistory { theme.accent } else { theme.border }))
-        .title(" History (j/k:nav  d:details  /:filter) ");
+        .title(" History ");
 
     if state.proxy_history.is_empty() {
         let empty_msg = Paragraph::new(vec![
@@ -1724,27 +1848,59 @@ fn render_scanner_view(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) 
     // Status block
     let status_block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.border))
+        .border_style(Style::default().fg(if state.scanner_running { theme.accent } else { theme.border }))
         .title(format!(" Scanner ({} findings) ", state.findings.len()));
 
-    let mut status_lines = vec![Line::from("")];
+    let mut status_lines = vec![];
 
-    if let Some(progress) = state.scan_progress {
-        let bar_width = 30;
-        let filled = (progress * bar_width as f64) as usize;
-        let empty = bar_width - filled;
-
+    if state.scanner_running {
+        // Active scan in progress
         status_lines.push(Line::from(vec![
-            Span::styled("  Scanning: ", Style::default().fg(theme.fg)),
-            Span::styled("█".repeat(filled), Style::default().fg(theme.accent)),
-            Span::styled("░".repeat(empty), Style::default().fg(theme.muted)),
-            Span::styled(format!(" {:.0}%", progress * 100.0), Style::default().fg(theme.fg)),
+            Span::styled("  ● ", Style::default().fg(theme.success)),
+            Span::styled("Active scan running", Style::default().fg(theme.success).add_modifier(Modifier::BOLD)),
+            Span::styled("  [Esc to stop]", Style::default().fg(theme.muted)),
         ]));
+
+        // Show target URL
+        if !state.scanner_target_url.is_empty() {
+            let target = if state.scanner_target_url.len() > 60 {
+                format!("{}...", &state.scanner_target_url[..57])
+            } else {
+                state.scanner_target_url.clone()
+            };
+            status_lines.push(Line::from(vec![
+                Span::styled("  Target: ", Style::default().fg(theme.muted)),
+                Span::styled(target, Style::default().fg(theme.info)),
+            ]));
+        }
+
+        // Progress bar if available
+        if let Some(progress) = state.scan_progress {
+            let bar_width = 30;
+            let filled = (progress * bar_width as f64) as usize;
+            let empty = bar_width - filled;
+
+            status_lines.push(Line::from(vec![
+                Span::styled("  Progress: ", Style::default().fg(theme.muted)),
+                Span::styled("█".repeat(filled), Style::default().fg(theme.accent)),
+                Span::styled("░".repeat(empty), Style::default().fg(theme.muted)),
+                Span::styled(format!(" {:.0}%", progress * 100.0), Style::default().fg(theme.fg)),
+            ]));
+        }
     } else {
+        // No active scan - show passive status and hint
         status_lines.push(Line::from(vec![
-            Span::styled("  Passive scanning: ", Style::default().fg(theme.muted)),
-            Span::styled(if state.proxy_running { "Active (via proxy)" } else { "Inactive" },
+            Span::styled("  Passive: ", Style::default().fg(theme.muted)),
+            Span::styled(if state.proxy_running { "● Active" } else { "○ Inactive" },
                 Style::default().fg(if state.proxy_running { theme.success } else { theme.muted })),
+            Span::styled("  |  Active: ", Style::default().fg(theme.muted)),
+            Span::styled("Press 's' to start scan", Style::default().fg(theme.info)),
+        ]));
+
+        // Show target URL input hint
+        status_lines.push(Line::from(vec![
+            Span::styled("  Attacks: ", Style::default().fg(theme.muted)),
+            Span::styled("SQLi XSS PathTraversal CmdInj XXE SSRF", Style::default().fg(theme.fg)),
         ]));
     }
 
@@ -1803,7 +1959,7 @@ fn render_scanner_view(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) 
     let findings_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(if state.focus == Focus::Findings { theme.accent } else { theme.border }))
-        .title(format!("{}  /:filter  Enter:expand  d:details ", title));
+        .title(title);
 
     let findings_area = chunks[findings_chunk_idx];
 
@@ -1815,7 +1971,7 @@ fn render_scanner_view(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) 
                 Line::from(""),
                 Line::from(Span::styled("  Findings will appear here when:", Style::default().fg(theme.muted))),
                 Line::from(Span::styled("    • Proxy traffic is analyzed (passive scanning)", Style::default().fg(theme.muted))),
-                Line::from(Span::styled("    • Active scans are run (Ctrl+S)", Style::default().fg(theme.muted))),
+                Line::from(Span::styled("    • Active scans are run (press 's' to start)", Style::default().fg(theme.muted))),
             ])
         } else {
             Paragraph::new(vec![
@@ -2018,7 +2174,7 @@ fn render_fuzzer_view(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
     let template_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(if template_focus { theme.accent } else { theme.border }))
-        .title(" Request Template (use §markers§ for payloads) ");
+        .title(" Template ");
 
     let template_text = if state.fuzzer_request_template.is_empty() {
         vec![
@@ -2090,9 +2246,20 @@ fn render_fuzzer_view(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         ]),
         Line::from(vec![
             Span::styled("  Payload Set: ", Style::default().fg(theme.muted)),
-            Span::styled(state.fuzzer_payload_set.name(), Style::default().fg(theme.accent)),
-            Span::styled(" (w to cycle)", Style::default().fg(theme.muted)),
+            Span::styled(" (w/W)", Style::default().fg(theme.muted)),
         ]),
+        Line::from(
+            crate::app::FuzzerPayloadSet::all()
+                .iter()
+                .map(|p| {
+                    if *p == state.fuzzer_payload_set {
+                        Span::styled(format!(" [{}] ", p.name()), Style::default().fg(theme.accent))
+                    } else {
+                        Span::styled(format!(" {} ", p.name()), Style::default().fg(theme.muted))
+                    }
+                })
+                .collect::<Vec<_>>()
+        ),
         Line::from(""),
         Line::from(vec![
             Span::styled("  Concurrency: ", Style::default().fg(theme.muted)),
@@ -2104,9 +2271,17 @@ fn render_fuzzer_view(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
             Span::styled(format!("{}ms", state.fuzzer_delay_ms), Style::default().fg(theme.fg)),
             Span::styled(" (d to adjust)", Style::default().fg(theme.muted)),
         ]),
+        Line::from(vec![
+            Span::styled("  Encoding: ", Style::default().fg(theme.muted)),
+            Span::styled(state.fuzzer_encoding.name(), Style::default().fg(theme.accent)),
+            Span::styled(" (,/. to cycle)", Style::default().fg(theme.muted)),
+        ]),
         Line::from(""),
         Line::from(vec![
             Span::styled("  [Enter] Start  [Space] Pause  [Esc] Stop", Style::default().fg(theme.muted)),
+        ]),
+        Line::from(vec![
+            Span::styled("  [x] Export CSV  [X] Export JSON", Style::default().fg(theme.muted)),
         ]),
     ];
 
@@ -2116,12 +2291,26 @@ fn render_fuzzer_view(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
     // ========== Results Panel ==========
     let results_focus = state.fuzzer_focus == FuzzerFocus::Results;
     let stats = &state.fuzzer_stats;
-    let results_title = format!(
-        " Results: {} sent, {} interesting (s to sort by: {}) ",
-        stats.requests_sent,
-        stats.interesting_count,
-        state.fuzzer_sort_by.name()
-    );
+    // Build title with sort indicator using FuzzerSortBy::all()
+    let sort_indicator: String = FuzzerSortBy::all()
+        .iter()
+        .map(|s| {
+            let name = match s {
+                FuzzerSortBy::RequestNum => "#",
+                FuzzerSortBy::StatusCode => "S",
+                FuzzerSortBy::Length => "L",
+                FuzzerSortBy::Time => "T",
+                FuzzerSortBy::Interesting => "I",
+            };
+            if *s == state.fuzzer_sort_by {
+                format!("[{}]", name)
+            } else {
+                name.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("");
+    let results_title = format!(" Results ({}) [s:sort {}] ", stats.requests_sent, sort_indicator);
     let results_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(if results_focus { theme.accent } else { theme.border }))
@@ -2404,7 +2593,7 @@ fn render_settings_view(frame: &mut Frame, area: Rect, app: &App, theme: &Theme)
     let content_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.accent))
-        .title(format!(" {} Settings (j/k:nav, Enter:toggle, +/-:adjust) ", state.settings_section.name()));
+        .title(format!(" {} ", state.settings_section.name()));
 
     let content_lines = match state.settings_section {
         SettingsSection::Proxy => vec![
@@ -2643,8 +2832,7 @@ fn render_spider_view(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
             Span::styled(format!("{} queued", state.spider_stats.queued), Style::default().fg(theme.warning)),
         ]),
         Line::from(""),
-        Line::from(Span::styled("  [Enter] Start  [Space] Pause  [Esc] Stop", Style::default().fg(theme.muted))),
-        Line::from(Span::styled("  [i] Edit URL  [Tab] Next panel", Style::default().fg(theme.muted))),
+        Line::from(Span::styled("  Enter:start  Esc:stop", Style::default().fg(theme.muted))),
     ];
 
     let config_para = Paragraph::new(config_lines).block(config_block);
@@ -2732,76 +2920,143 @@ fn render_placeholder_view(frame: &mut Frame, area: Rect, title: &str, message: 
 fn render_status_bar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
     let state = app.state.read();
 
+    // Check if in any edit mode
+    let is_editing = matches!(
+        state.mode,
+        AppMode::EditUrl
+            | AppMode::EditKeyValue
+            | AppMode::EditBody
+            | AppMode::EditAuth
+            | AppMode::EditInterceptUrl
+            | AppMode::EditInterceptMethod
+            | AppMode::EditInterceptHeaders
+            | AppMode::EditInterceptBody
+            | AppMode::Rename
+            | AppMode::EditScannerTarget
+            | AppMode::EditScript
+            | AppMode::BrowserUrl
+            | AppMode::Command
+            | AppMode::FilterProxy
+            | AppMode::FilterFindings
+            | AppMode::SearchResponse
+    );
+
     let mode_str = match state.mode {
         AppMode::Normal => "NORMAL",
-        AppMode::EditUrl => "EDIT URL",
-        AppMode::EditKeyValue => "EDIT",
-        AppMode::EditBody => "EDIT BODY",
-        AppMode::EditAuth => "EDIT AUTH",
+        AppMode::EditUrl => "✎ URL",
+        AppMode::EditKeyValue => "✎ EDIT",
+        AppMode::EditBody => "✎ BODY",
+        AppMode::EditAuth => "✎ AUTH",
         AppMode::SelectEnvironment => "ENV",
-        AppMode::SearchResponse => "SEARCH",
+        AppMode::SearchResponse => "✎ SEARCH",
         AppMode::ViewResponse => "VIEW",
         AppMode::Intercept => "INTERCEPT",
         AppMode::Scanning => "SCAN",
         AppMode::Fuzzing => "FUZZ",
-        AppMode::Command => "CMD",
+        AppMode::Command => "✎ CMD",
         AppMode::Help => "HELP",
         AppMode::ConfirmDelete => "DELETE?",
-        AppMode::Rename => "RENAME",
-        AppMode::FilterProxy => "FILTER",
-        AppMode::BrowserUrl => "URL",
+        AppMode::Rename => "✎ RENAME",
+        AppMode::FilterProxy => "✎ FILTER",
+        AppMode::BrowserUrl => "✎ URL",
         AppMode::ProxyDetails => "DETAILS",
-        AppMode::EditInterceptUrl => "EDIT URL",
-        AppMode::EditInterceptMethod => "EDIT METHOD",
-        AppMode::EditInterceptHeaders => "EDIT HEADERS",
-        AppMode::EditInterceptBody => "EDIT BODY",
+        AppMode::EditInterceptUrl => "✎ URL",
+        AppMode::EditInterceptMethod => "✎ METHOD",
+        AppMode::EditInterceptHeaders => "✎ HEADERS",
+        AppMode::EditInterceptBody => "✎ BODY",
         AppMode::FindingDetails => "FINDING",
-        AppMode::FilterFindings => "FILTER",
-        AppMode::ImportFile => "IMPORT",
-        AppMode::EditScannerTarget => "SCAN TARGET",
-        AppMode::Scanning => "SCANNING",
-        AppMode::Fuzzing => "FUZZING",
-        AppMode::ViewResponse => "RESPONSE",
-        AppMode::Intercept => "INTERCEPT",
+        AppMode::FilterFindings => "✎ FILTER",
+        AppMode::ImportFile => "✎ IMPORT",
+        AppMode::EditScannerTarget => "✎ TARGET",
+        AppMode::EditScript => "✎ SCRIPT",
+        AppMode::ViewWebSocket => "WEBSOCKET",
+        AppMode::ReportDialog => "REPORT",
     };
 
+    // Animated spinner frames
+    const SPINNER_FRAMES: [&str; 8] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"];
+    let spinner = SPINNER_FRAMES[state.spinner_frame as usize % 8];
+
+    // Expanded proxy indicator
     let proxy_indicator = if state.proxy_running {
-        Span::styled("●", Style::default().fg(Color::Green))
+        vec![
+            Span::styled("● ", Style::default().fg(Color::Green)),
+            Span::styled("PROXY", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        ]
     } else {
-        Span::styled("○", Style::default().fg(theme.muted))
+        vec![
+            Span::styled("○ ", Style::default().fg(theme.muted)),
+            Span::styled("PROXY", Style::default().fg(theme.muted)),
+        ]
     };
 
-    let status_msg = state
-        .status_message
-        .as_deref()
-        .unwrap_or("");
+    // Activity indicator for async operations
+    let fuzzer_running = state.fuzzer_state == crate::fuzzer::FuzzerState::Running;
+    let spider_running = state.spider_state == crate::spider::SpiderState::Running;
+
+    let activity_indicator = if state.scanner_running {
+        vec![
+            Span::styled(" │ ", Style::default().fg(theme.border)),
+            Span::styled(spinner, Style::default().fg(Color::Yellow)),
+            Span::styled(" SCANNING", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        ]
+    } else if fuzzer_running {
+        vec![
+            Span::styled(" │ ", Style::default().fg(theme.border)),
+            Span::styled(spinner, Style::default().fg(Color::Magenta)),
+            Span::styled(" FUZZING", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+        ]
+    } else if spider_running {
+        vec![
+            Span::styled(" │ ", Style::default().fg(theme.border)),
+            Span::styled(spinner, Style::default().fg(Color::Cyan)),
+            Span::styled(" SPIDERING", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        ]
+    } else if state.is_loading {
+        vec![
+            Span::styled(" │ ", Style::default().fg(theme.border)),
+            Span::styled(spinner, Style::default().fg(theme.accent)),
+            Span::styled(" LOADING", Style::default().fg(theme.accent)),
+        ]
+    } else {
+        vec![]
+    };
+
+    // Status message with error styling
+    let status_msg = state.status_message.as_deref().unwrap_or("");
+    let status_msg_span = if state.status_is_error {
+        Span::styled(status_msg, Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
+    } else {
+        Span::styled(status_msg, Style::default().fg(theme.fg))
+    };
 
     // Shortcuts hint based on current focus
     let shortcuts = match state.focus {
-        Focus::Workspace => "j/k:nav  Enter:select  n:new",
-        Focus::RequestEditor => "i:edit  Enter:send  Tab:next",
-        Focus::ResponseViewer => "j/k:scroll  y:copy  Tab:next",
-        _ => "?:help  Tab:focus  q:quit",
+        Focus::Workspace => "j/k:nav  Enter:select  n:new  ?:help",
+        Focus::RequestEditor => "i:edit  Enter:send  Tab:next  ?:help",
+        Focus::ResponseViewer => "j/k:scroll  y:copy  ?:help",
+        _ => "Tab:focus  ::cmd  ?:help  q:quit",
     };
 
-    let status = Line::from(vec![
+    let mut spans = vec![
         Span::styled(
             format!(" {} ", mode_str),
             Style::default().fg(Color::Black).bg(theme.accent),
         ),
         Span::raw(" "),
-        proxy_indicator,
-        Span::styled(" Proxy ", Style::default().fg(theme.muted)),
-        Span::styled("│", Style::default().fg(theme.border)),
-        Span::raw(" "),
-        Span::raw(status_msg),
-        Span::raw(" "),
-        // Right-aligned shortcuts
-        Span::styled(
-            format!("{:>width$}", shortcuts, width = (area.width as usize).saturating_sub(30)),
-            Style::default().fg(theme.muted),
-        ),
-    ]);
+    ];
+    spans.extend(proxy_indicator);
+    spans.extend(activity_indicator);
+    spans.push(Span::styled(" │ ", Style::default().fg(theme.border)));
+    spans.push(status_msg_span);
+    spans.push(Span::raw(" "));
+    // Right-aligned shortcuts
+    spans.push(Span::styled(
+        format!("{:>width$}", shortcuts, width = (area.width as usize).saturating_sub(50)),
+        Style::default().fg(theme.muted),
+    ));
+
+    let status = Line::from(spans);
 
     let status_bar = Paragraph::new(status)
         .style(Style::default().bg(theme.bg));
@@ -2810,7 +3065,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
 }
 
 fn render_help_dialog(frame: &mut Frame, theme: &Theme) {
-    let area = centered_rect(70, 85, frame.area());
+    let area = centered_rect(80, 90, frame.area());
 
     let help_text = vec![
         Line::from(Span::styled(
@@ -2818,14 +3073,19 @@ fn render_help_dialog(frame: &mut Frame, theme: &Theme) {
             Style::default().fg(theme.accent).add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
+        // General
         Line::from(Span::styled("General", Style::default().add_modifier(Modifier::BOLD))),
+        Line::from(vec![
+            Span::styled("  Ctrl+P    ", Style::default().fg(theme.accent)),
+            Span::raw("Command palette (search all actions)"),
+        ]),
+        Line::from(vec![
+            Span::styled("  1-7       ", Style::default().fg(theme.info)),
+            Span::raw("Switch tabs (Workspace/Proxy/Scanner/Fuzzer/Findings/Decode/Settings)"),
+        ]),
         Line::from(vec![
             Span::styled("  Tab       ", Style::default().fg(theme.info)),
             Span::raw("Cycle focus between panels"),
-        ]),
-        Line::from(vec![
-            Span::styled("  1-6       ", Style::default().fg(theme.info)),
-            Span::raw("Switch tab (Workspace/Proxy/Scanner/...)"),
         ]),
         Line::from(vec![
             Span::styled("  ?         ", Style::default().fg(theme.info)),
@@ -2835,7 +3095,24 @@ fn render_help_dialog(frame: &mut Frame, theme: &Theme) {
             Span::styled("  q         ", Style::default().fg(theme.info)),
             Span::raw("Quit application"),
         ]),
+        Line::from(vec![
+            Span::styled("  Ctrl+E    ", Style::default().fg(theme.info)),
+            Span::raw("Export report (HTML/JSON/CSV/Markdown)"),
+        ]),
+        Line::from(vec![
+            Span::styled("  Ctrl+t    ", Style::default().fg(theme.info)),
+            Span::raw("New request tab"),
+        ]),
+        Line::from(vec![
+            Span::styled("  Ctrl+w    ", Style::default().fg(theme.info)),
+            Span::raw("Close current tab"),
+        ]),
+        Line::from(vec![
+            Span::styled("  >/<       ", Style::default().fg(theme.info)),
+            Span::raw("Next/previous request tab"),
+        ]),
         Line::from(""),
+        // Navigation
         Line::from(Span::styled("Navigation", Style::default().add_modifier(Modifier::BOLD))),
         Line::from(vec![
             Span::styled("  j/k       ", Style::default().fg(theme.info)),
@@ -2846,10 +3123,6 @@ fn render_help_dialog(frame: &mut Frame, theme: &Theme) {
             Span::raw("Move focus left/right"),
         ]),
         Line::from(vec![
-            Span::styled("  [/]       ", Style::default().fg(theme.info)),
-            Span::raw("Switch sub-tabs"),
-        ]),
-        Line::from(vec![
             Span::styled("  g/G       ", Style::default().fg(theme.info)),
             Span::raw("Go to top/bottom"),
         ]),
@@ -2857,15 +3130,70 @@ fn render_help_dialog(frame: &mut Frame, theme: &Theme) {
             Span::styled("  Ctrl+d/u  ", Style::default().fg(theme.info)),
             Span::raw("Half page down/up"),
         ]),
+        Line::from(vec![
+            Span::styled("  [/]       ", Style::default().fg(theme.info)),
+            Span::raw("Switch sub-tabs/panels"),
+        ]),
         Line::from(""),
-        Line::from(Span::styled("Request Editing", Style::default().add_modifier(Modifier::BOLD))),
+        // Proxy Tab
+        Line::from(Span::styled("Proxy Tab (2)", Style::default().add_modifier(Modifier::BOLD))),
+        Line::from(vec![
+            Span::styled("  I         ", Style::default().fg(theme.info)),
+            Span::raw("Toggle intercept mode"),
+        ]),
+        Line::from(vec![
+            Span::styled("  f         ", Style::default().fg(theme.info)),
+            Span::raw("Forward intercepted request"),
+        ]),
+        Line::from(vec![
+            Span::styled("  x         ", Style::default().fg(theme.info)),
+            Span::raw("Drop intercepted request"),
+        ]),
+        Line::from(vec![
+            Span::styled("  d         ", Style::default().fg(theme.info)),
+            Span::raw("View request details"),
+        ]),
+        Line::from(vec![
+            Span::styled("  /         ", Style::default().fg(theme.info)),
+            Span::raw("Filter history (!pattern to exclude)"),
+        ]),
+        Line::from(vec![
+            Span::styled("  W         ", Style::default().fg(theme.info)),
+            Span::raw("View WebSocket messages"),
+        ]),
+        Line::from(vec![
+            Span::styled("  Ctrl+C    ", Style::default().fg(theme.info)),
+            Span::raw("Install CA certificate"),
+        ]),
+        Line::from(""),
+        // Scanner Tab
+        Line::from(Span::styled("Scanner Tab (3)", Style::default().add_modifier(Modifier::BOLD))),
+        Line::from(vec![
+            Span::styled("  Enter     ", Style::default().fg(theme.info)),
+            Span::raw("Start/stop scan"),
+        ]),
+        Line::from(vec![
+            Span::styled("  e         ", Style::default().fg(theme.info)),
+            Span::raw("Edit scan target URL"),
+        ]),
+        Line::from(vec![
+            Span::styled("  S         ", Style::default().fg(theme.info)),
+            Span::raw("Open scripting panel"),
+        ]),
+        Line::from(vec![
+            Span::styled("  p         ", Style::default().fg(theme.info)),
+            Span::raw("Configure scan policy"),
+        ]),
+        Line::from(""),
+        // Request Editor
+        Line::from(Span::styled("Request Editor", Style::default().add_modifier(Modifier::BOLD))),
         Line::from(vec![
             Span::styled("  e         ", Style::default().fg(theme.info)),
             Span::raw("Edit URL"),
         ]),
         Line::from(vec![
             Span::styled("  i         ", Style::default().fg(theme.info)),
-            Span::raw("Edit current field (params/headers/body)"),
+            Span::raw("Edit current field"),
         ]),
         Line::from(vec![
             Span::styled("  o         ", Style::default().fg(theme.info)),
@@ -2892,11 +3220,8 @@ fn render_help_dialog(frame: &mut Frame, theme: &Theme) {
             Span::raw("New request"),
         ]),
         Line::from(""),
-        Line::from(Span::styled("Response", Style::default().add_modifier(Modifier::BOLD))),
-        Line::from(vec![
-            Span::styled("  [/]       ", Style::default().fg(theme.info)),
-            Span::raw("Switch Body/Headers/Cookies"),
-        ]),
+        // Response Viewer
+        Line::from(Span::styled("Response Viewer", Style::default().add_modifier(Modifier::BOLD))),
         Line::from(vec![
             Span::styled("  /         ", Style::default().fg(theme.info)),
             Span::raw("Search in response"),
@@ -2911,35 +3236,41 @@ fn render_help_dialog(frame: &mut Frame, theme: &Theme) {
         ]),
         Line::from(vec![
             Span::styled("  r         ", Style::default().fg(theme.info)),
-            Span::raw("Toggle raw/pretty"),
+            Span::raw("Toggle raw/pretty view"),
         ]),
         Line::from(""),
-        Line::from(Span::styled("Environment & Import/Export", Style::default().add_modifier(Modifier::BOLD))),
+        // Import/Export
+        Line::from(Span::styled("Import/Export", Style::default().add_modifier(Modifier::BOLD))),
         Line::from(vec![
             Span::styled("  E         ", Style::default().fg(theme.info)),
             Span::raw("Select environment"),
         ]),
         Line::from(vec![
+            Span::styled("  Ctrl+I    ", Style::default().fg(theme.info)),
+            Span::raw("Import from file (Postman/HAR/OpenAPI/cURL)"),
+        ]),
+        Line::from(vec![
             Span::styled("  I         ", Style::default().fg(theme.info)),
-            Span::raw("Import from clipboard (cURL/URL)"),
+            Span::raw("Import from clipboard"),
         ]),
         Line::from(vec![
             Span::styled("  C         ", Style::default().fg(theme.info)),
-            Span::raw("Export as cURL to clipboard"),
+            Span::raw("Export as cURL"),
         ]),
         Line::from(vec![
             Span::styled("  Ctrl+V    ", Style::default().fg(theme.info)),
             Span::raw("Paste from clipboard"),
         ]),
         Line::from(""),
-        Line::from(Span::styled("Collection Management", Style::default().add_modifier(Modifier::BOLD))),
+        // Collection Management
+        Line::from(Span::styled("Collections", Style::default().add_modifier(Modifier::BOLD))),
         Line::from(vec![
             Span::styled("  H         ", Style::default().fg(theme.info)),
-            Span::raw("Toggle history focus"),
+            Span::raw("Toggle history panel"),
         ]),
         Line::from(vec![
             Span::styled("  D         ", Style::default().fg(theme.info)),
-            Span::raw("Delete selected request"),
+            Span::raw("Delete selected item"),
         ]),
         Line::from(vec![
             Span::styled("  R         ", Style::default().fg(theme.info)),
@@ -2947,7 +3278,7 @@ fn render_help_dialog(frame: &mut Frame, theme: &Theme) {
         ]),
         Line::from(""),
         Line::from(Span::styled(
-            "Press Esc or ? to close",
+            "Press Esc or ? to close  │  Ctrl+P for command palette",
             Style::default().fg(theme.muted),
         )),
     ];
@@ -2965,15 +3296,33 @@ fn render_help_dialog(frame: &mut Frame, theme: &Theme) {
     frame.render_widget(help, area);
 }
 
-fn render_command_palette(frame: &mut Frame, theme: &Theme) {
-    let area = centered_rect(50, 15, frame.area());
+fn render_command_palette(frame: &mut Frame, app: &App, theme: &Theme) {
+    let state = app.state.read();
+    let area = centered_rect(60, 20, frame.area());
+
+    let command_text = &state.command_input;
+    let cursor = "█";
 
     let command = Paragraph::new(vec![
         Line::from(""),
         Line::from(vec![
             Span::styled(":", Style::default().fg(theme.accent)),
-            Span::styled("_", Style::default().add_modifier(Modifier::SLOW_BLINK)),
+            Span::styled(command_text.as_str(), Style::default().fg(theme.fg)),
+            Span::styled(cursor, Style::default().fg(theme.accent).add_modifier(Modifier::SLOW_BLINK)),
         ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Commands: q/quit, w/save, wq, clear, help",
+            Style::default().fg(theme.muted),
+        )),
+        Line::from(Span::styled(
+            "  tab <1-8>, intercept on/off",
+            Style::default().fg(theme.muted),
+        )),
+        Line::from(Span::styled(
+            "  report <html|json|csv|md> <path>",
+            Style::default().fg(theme.muted),
+        )),
     ])
     .block(
         Block::default()
@@ -3875,4 +4224,229 @@ fn format_size(bytes: usize) -> String {
     } else {
         format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
     }
+}
+
+/// Render the script panel (overlay dialog)
+fn render_script_panel(frame: &mut Frame, app: &App, theme: &Theme) {
+    let state = app.state.read();
+    let area = frame.area();
+
+    // Create centered dialog (60% width, 80% height)
+    let popup_width = (area.width as f32 * 0.6) as u16;
+    let popup_height = (area.height as f32 * 0.8) as u16;
+    let popup_x = (area.width - popup_width) / 2;
+    let popup_y = (area.height - popup_height) / 2;
+
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    // Clear the background
+    frame.render_widget(Clear, popup_area);
+
+    // Split into editor (top 70%) and output (bottom 30%)
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage(70),
+            Constraint::Percentage(30),
+        ])
+        .split(popup_area);
+
+    // Script editor
+    let editor_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.accent))
+        .title(" Script ");
+
+    let script_lines: Vec<Line> = state.script_content.lines()
+        .map(|line| Line::from(Span::styled(line, Style::default().fg(theme.fg))))
+        .collect();
+
+    let script_paragraph = if script_lines.is_empty() {
+        Paragraph::new(vec![
+            Line::from(Span::styled("// JavaScript scripting", Style::default().fg(theme.muted))),
+            Line::from(Span::styled("// Example: 1 + 1", Style::default().fg(theme.muted))),
+            Line::from(""),
+        ])
+    } else {
+        Paragraph::new(script_lines)
+    };
+
+    frame.render_widget(script_paragraph.block(editor_block), chunks[0]);
+
+    // Output panel
+    let output_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.border))
+        .title(" Output ");
+
+    let output_lines: Vec<Line> = state.script_output.iter()
+        .map(|line| Line::from(Span::styled(line.as_str(), Style::default().fg(theme.fg))))
+        .collect();
+
+    let output_paragraph = if output_lines.is_empty() {
+        Paragraph::new(Span::styled("  No output yet", Style::default().fg(theme.muted)))
+    } else {
+        Paragraph::new(output_lines)
+    };
+
+    frame.render_widget(output_paragraph.block(output_block), chunks[1]);
+}
+
+/// Render the report generation dialog
+fn render_report_dialog(frame: &mut Frame, app: &App, theme: &Theme) {
+    let state = app.state.read();
+    let area = frame.area();
+
+    // Create centered dialog (50% width, 30% height)
+    let popup_width = (area.width as f32 * 0.5) as u16;
+    let popup_height = 10;
+    let popup_x = (area.width - popup_width) / 2;
+    let popup_y = (area.height - popup_height) / 2;
+
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    // Clear the background
+    frame.render_widget(Clear, popup_area);
+
+    let formats = ["HTML", "JSON", "CSV", "Markdown"];
+    let current_format = formats[state.report_format_index];
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.accent))
+        .title(" Export Report ");
+
+    let content = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Format: ", Style::default().fg(theme.muted)),
+            Span::styled(current_format, Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled("  (Tab to change)", Style::default().fg(theme.muted)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Path: ", Style::default().fg(theme.muted)),
+            Span::styled(&state.report_path, Style::default().fg(theme.fg)),
+            Span::styled("▎", Style::default().fg(theme.accent)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(format!("  {} findings will be exported", state.findings.len()), Style::default().fg(theme.muted)),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled("  Enter: Export  |  Esc: Cancel", Style::default().fg(theme.muted))),
+    ];
+
+    let paragraph = Paragraph::new(content).block(block);
+    frame.render_widget(paragraph, popup_area);
+}
+
+/// Render the WebSocket message viewer panel
+fn render_websocket_panel(frame: &mut Frame, app: &App, theme: &Theme) {
+    let state = app.state.read();
+    let area = frame.area();
+
+    // Create centered dialog (70% width, 80% height)
+    let popup_width = (area.width as f32 * 0.7) as u16;
+    let popup_height = (area.height as f32 * 0.8) as u16;
+    let popup_x = (area.width - popup_width) / 2;
+    let popup_y = (area.height - popup_height) / 2;
+
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    // Clear the background
+    frame.render_widget(Clear, popup_area);
+
+    // Split into sessions list (left 30%) and messages (right 70%)
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(30),
+            Constraint::Percentage(70),
+        ])
+        .split(popup_area);
+
+    // Get WebSocket history from proxy (if available)
+    let sessions: Vec<crate::proxy::websocket::WebSocketSession> = if let Some(proxy) = &app.proxy {
+        proxy.ws_history().get_sessions()
+    } else {
+        Vec::new()
+    };
+
+    // Sessions panel
+    let sessions_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.accent))
+        .title(format!(" Sessions ({}) ", sessions.len()));
+
+    let session_lines: Vec<Line> = if sessions.is_empty() {
+        vec![
+            Line::from(""),
+            Line::from(Span::styled("  No WebSocket sessions", Style::default().fg(theme.muted))),
+            Line::from(""),
+            Line::from(Span::styled("  Sessions appear when", Style::default().fg(theme.muted))),
+            Line::from(Span::styled("  WebSocket traffic is", Style::default().fg(theme.muted))),
+            Line::from(Span::styled("  captured via proxy", Style::default().fg(theme.muted))),
+        ]
+    } else {
+        sessions.iter().enumerate().map(|(idx, session)| {
+            let is_selected = idx == state.ws_selected_session;
+            let style = if is_selected {
+                Style::default().fg(Color::Black).bg(theme.accent)
+            } else {
+                Style::default().fg(theme.fg)
+            };
+            Line::from(Span::styled(
+                format!(" {} {} ", session.state.as_str(), safe_truncate(&session.host, 20)),
+                style
+            ))
+        }).collect()
+    };
+
+    let sessions_paragraph = Paragraph::new(session_lines).block(sessions_block);
+    frame.render_widget(sessions_paragraph, chunks[0]);
+
+    // Messages panel
+    let messages_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.border))
+        .title(" Messages (j/k: nav, q: close) ");
+
+    let messages: Vec<crate::proxy::websocket::WebSocketMessage> = if let Some(proxy) = &app.proxy {
+        if let Some(session) = sessions.get(state.ws_selected_session) {
+            proxy.ws_history().get_session_messages(session.id)
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
+    let message_lines: Vec<Line> = if messages.is_empty() {
+        vec![
+            Line::from(""),
+            Line::from(Span::styled("  No messages in this session", Style::default().fg(theme.muted))),
+        ]
+    } else {
+        messages.iter().enumerate().map(|(idx, msg)| {
+            let is_selected = idx == state.ws_selected_message;
+            let dir_style = match msg.direction {
+                crate::proxy::websocket::MessageDirection::ClientToServer => Style::default().fg(Color::Green),
+                crate::proxy::websocket::MessageDirection::ServerToClient => Style::default().fg(Color::Blue),
+            };
+            let style = if is_selected {
+                Style::default().fg(Color::Black).bg(theme.accent)
+            } else {
+                Style::default().fg(theme.fg)
+            };
+            Line::from(vec![
+                Span::styled(format!(" {} ", msg.direction.as_str()), dir_style),
+                Span::styled(format!("[{}] ", msg.message_type.as_str()), Style::default().fg(theme.muted)),
+                Span::styled(safe_truncate(&msg.payload, 50), style),
+            ])
+        }).collect()
+    };
+
+    let messages_paragraph = Paragraph::new(message_lines).block(messages_block);
+    frame.render_widget(messages_paragraph, chunks[1]);
 }

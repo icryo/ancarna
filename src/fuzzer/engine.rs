@@ -1,5 +1,6 @@
 //! Core fuzzer engine with concurrent request handling
 
+use super::encoding::PayloadEncoding;
 use super::{FuzzResult, FuzzResultSet, FuzzerStats, PayloadPosition, PayloadSet};
 use crate::http::Request;
 use anyhow::{Context, Result};
@@ -76,6 +77,12 @@ pub struct FuzzerConfig {
     pub max_response_size: usize,
     /// Length variance threshold for marking interesting (percentage)
     pub length_variance_threshold: f64,
+    /// Payload encoding to apply
+    pub encoding: PayloadEncoding,
+    /// Optional prefix to add before each payload
+    pub payload_prefix: Option<String>,
+    /// Optional suffix to add after each payload
+    pub payload_suffix: Option<String>,
 }
 
 impl Default for FuzzerConfig {
@@ -87,6 +94,9 @@ impl Default for FuzzerConfig {
             follow_redirects: true,
             max_response_size: 10 * 1024 * 1024, // 10MB
             length_variance_threshold: 10.0,
+            encoding: PayloadEncoding::None,
+            payload_prefix: None,
+            payload_suffix: None,
         }
     }
 }
@@ -405,20 +415,23 @@ impl Fuzzer {
         for (pos, payload) in positions.iter().zip(payloads.iter()) {
             let marker = format!("§{}§", pos.name);
 
+            // Apply encoding to payload
+            let encoded_payload = self.encode_payload(payload);
+
             // Replace in URL
-            url = url.replace(&marker, payload);
+            url = url.replace(&marker, &encoded_payload);
 
             // Replace in headers
             for value in headers.values_mut() {
                 if value.contains(&marker) {
-                    *value = value.replace(&marker, payload);
+                    *value = value.replace(&marker, &encoded_payload);
                 }
             }
 
             // Replace in body
             if let Some(ref mut body_str) = body {
                 if body_str.contains(&marker) {
-                    *body_str = body_str.replace(&marker, payload);
+                    *body_str = body_str.replace(&marker, &encoded_payload);
                 }
             }
         }
@@ -451,6 +464,21 @@ impl Fuzzer {
             headers,
             body,
             ..base.clone()
+        }
+    }
+
+    /// Encode a payload according to config settings
+    fn encode_payload(&self, payload: &str) -> String {
+        let encoded = self.config.encoding.encode(payload);
+
+        // Apply prefix and suffix
+        let prefix = self.config.payload_prefix.as_deref().unwrap_or("");
+        let suffix = self.config.payload_suffix.as_deref().unwrap_or("");
+
+        if prefix.is_empty() && suffix.is_empty() {
+            encoded
+        } else {
+            format!("{}{}{}", prefix, encoded, suffix)
         }
     }
 

@@ -1,5 +1,7 @@
 //! Import formats for collections and requests
 
+#![allow(dead_code)]
+
 pub mod curl;
 pub mod har;
 pub mod openapi;

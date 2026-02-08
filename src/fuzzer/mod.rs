@@ -3,13 +3,17 @@
 //! Implements functionality similar to Burp Turbo Intruder and ZAP Fuzzer.
 //! Supports multiple attack modes, wordlists, and concurrent requests.
 
+#![allow(dead_code)]
+
+mod encoding;
 mod engine;
 mod payloads;
 mod results;
 
+pub use encoding::{PayloadEncoding, PayloadProcessor};
 pub use engine::{Fuzzer, FuzzerConfig, AttackMode, FuzzerState};
 pub use payloads::{PayloadSet, PayloadPosition};
-pub use results::{FuzzResult, FuzzResultSet};
+pub use results::{FuzzResult, FuzzResultSet, ExportFormat};
 
 
 /// Fuzzer statistics

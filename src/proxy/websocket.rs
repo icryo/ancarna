@@ -3,6 +3,8 @@
 //! Handles WebSocket connection upgrades and message interception
 //! for security analysis and debugging.
 
+#![allow(dead_code)]
+
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 

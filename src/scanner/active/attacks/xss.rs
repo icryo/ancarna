@@ -1,5 +1,7 @@
 //! Cross-Site Scripting (XSS) testing
 
+#![allow(dead_code)]
+
 use anyhow::Result;
 
 use crate::http::{HttpClient, Request};

@@ -2,6 +2,8 @@
 //!
 //! Handles collections, environments, sessions, and import/export.
 
+#![allow(dead_code)]
+
 mod collections;
 mod environments;
 mod project;

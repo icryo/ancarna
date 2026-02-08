@@ -1,5 +1,7 @@
 //! Payload generation and management for fuzzing
 
+#![allow(dead_code)]
+
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;

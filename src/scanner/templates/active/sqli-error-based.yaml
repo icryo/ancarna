@@ -1,0 +1,105 @@
+id: sqli-error-based
+
+info:
+  name: SQL Injection - Error Based
+  author: ancarna
+  severity: high
+  description: Detects SQL injection vulnerabilities through database error messages
+  tags: sqli,injection,owasp-top10
+  classification:
+    cwe-id: 89
+  reference:
+    - https://owasp.org/www-community/attacks/SQL_Injection
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        - "'"
+        - "''"
+        - "1'"
+        - "1''"
+        - "' OR '1'='1"
+        - "' OR '1'='1'--"
+        - "1 OR 1=1"
+        - "1' OR '1'='1"
+        - "admin'--"
+        - "1; SELECT 1"
+        - "1 UNION SELECT NULL"
+        - "1' AND '1'='1"
+        - "' AND 1=1--"
+        - "-1 OR 1=1"
+        - "1' ORDER BY 1--"
+        - "1' ORDER BY 10--"
+    stop-at-first-match: true
+    matchers-condition: or
+    matchers:
+      - type: regex
+        part: body
+        regex:
+          - "SQL syntax.*MySQL"
+          - "Warning.*mysql_"
+          - "MySqlException"
+          - "valid MySQL result"
+          - "check the manual that corresponds to your MySQL server version"
+          - "MySqlClient\\."
+          - "com\\.mysql\\.jdbc"
+          - "Zend_Db_(Adapter|Statement)_Mysqli_Exception"
+          - "MySQLSyntaxErrorException"
+
+      - type: regex
+        part: body
+        regex:
+          - "PostgreSQL.*ERROR"
+          - "Warning.*\\Wpg_"
+          - "valid PostgreSQL result"
+          - "Npgsql\\."
+          - "PG::SyntaxError:"
+          - "org\\.postgresql\\.util\\.PSQLException"
+          - "ERROR:\\s+syntax error at or near"
+
+      - type: regex
+        part: body
+        regex:
+          - "Driver.* SQL[\\-\\_\\ ]*Server"
+          - "OLE DB.* SQL Server"
+          - "\\bSQL Server[^&lt;&quot;]+Driver"
+          - "Warning.*mssql_"
+          - "\\[Microsoft\\]\\[ODBC SQL Server Driver\\]"
+          - "\\[SqlException"
+          - "System\\.Data\\.SqlClient\\."
+          - "Unclosed quotation mark after the character string"
+          - "Microsoft OLE DB Provider for SQL Server"
+
+      - type: regex
+        part: body
+        regex:
+          - "ORA-[0-9][0-9][0-9][0-9]"
+          - "Oracle error"
+          - "Oracle.*Driver"
+          - "Warning.*\\Woci_"
+          - "Warning.*\\Wora_"
+          - "oracle\\.jdbc\\.driver"
+          - "quoted string not properly terminated"
+
+      - type: regex
+        part: body
+        regex:
+          - "SQLite/JDBCDriver"
+          - "SQLite\\.Exception"
+          - "System\\.Data\\.SQLite\\.SQLiteException"
+          - "Warning.*sqlite_"
+          - "Warning.*SQLite3::"
+          - "\\[SQLITE_ERROR\\]"
+          - "SQLITE_CONSTRAINT"
+          - "sqlite3\\.OperationalError:"
+
+      - type: regex
+        part: body
+        regex:
+          - "DB2 SQL error"
+          - "db2_\\w+\\("
+          - "SQLSTATE"
+          - "\\[IBM\\]\\[CLI Driver\\]"

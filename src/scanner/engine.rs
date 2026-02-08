@@ -1,5 +1,7 @@
 //! Scan engine orchestration
 
+#![allow(dead_code)]
+
 use anyhow::Result;
 use parking_lot::RwLock;
 use std::sync::Arc;

@@ -1,5 +1,7 @@
 //! Application event handling
 
+#![allow(dead_code)]
+
 use crossterm::event::{self, Event, KeyEvent};
 use std::time::Duration;
 

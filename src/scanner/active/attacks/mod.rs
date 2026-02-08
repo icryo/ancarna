@@ -1,5 +1,7 @@
 //! Attack modules for active scanning
 
+#![allow(dead_code)]
+
 pub mod command_injection;
 pub mod path_traversal;
 pub mod request_smuggling;

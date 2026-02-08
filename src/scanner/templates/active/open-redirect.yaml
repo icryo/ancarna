@@ -1,0 +1,112 @@
+id: open-redirect
+
+info:
+  name: Open Redirect
+  author: ancarna
+  severity: medium
+  description: Detects open redirect vulnerabilities that can be exploited for phishing
+  tags: redirect,phishing,owasp-top10
+  classification:
+    cwe-id: 601
+  reference:
+    - https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/11-Client-side_Testing/04-Testing_for_Client-side_URL_Redirect
+    - https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/redirect?url={{payload}}"
+      - "{{BaseURL}}/redirect?to={{payload}}"
+      - "{{BaseURL}}/redirect?next={{payload}}"
+      - "{{BaseURL}}/goto?url={{payload}}"
+      - "{{BaseURL}}/out?url={{payload}}"
+      - "{{BaseURL}}/out?link={{payload}}"
+      - "{{BaseURL}}/return?url={{payload}}"
+      - "{{BaseURL}}/return?to={{payload}}"
+      - "{{BaseURL}}/link?url={{payload}}"
+      - "{{BaseURL}}/redir?url={{payload}}"
+      - "{{BaseURL}}/external?url={{payload}}"
+      - "{{BaseURL}}/proxy?url={{payload}}"
+      - "{{BaseURL}}/login?next={{payload}}"
+      - "{{BaseURL}}/login?return={{payload}}"
+      - "{{BaseURL}}/logout?next={{payload}}"
+      - "{{BaseURL}}/auth?redirect_uri={{payload}}"
+      - "{{BaseURL}}/oauth/authorize?redirect_uri={{payload}}"
+    payloads:
+      payload:
+        # Direct external URLs
+        - "https://evil.com"
+        - "http://evil.com"
+        - "//evil.com"
+        # Protocol-relative
+        - "///evil.com"
+        - "////evil.com"
+        # Encoded variations
+        - "https:%2f%2fevil.com"
+        - "https:%252f%252fevil.com"
+        - "%2f%2fevil.com"
+        # Bypass filters
+        - "https://evil.com%2f%2f"
+        - "https://evil.com%00"
+        - "https://evil.com%0d%0a"
+        # Using @ symbol
+        - "https://expected.com@evil.com"
+        - "https://expected.com%40evil.com"
+        # Backslash bypass
+        - "https://evil.com\\"
+        - "//evil.com\\"
+        # Data/JavaScript (for reflected XSS via redirect)
+        - "javascript:alert(1)"
+        - "data:text/html,<script>alert(1)</script>"
+    stop-at-first-match: true
+    matchers-condition: or
+    matchers:
+      - type: regex
+        part: header
+        regex:
+          - "(?i)Location:\\s*https?://evil\\.com"
+          - "(?i)Location:\\s*//evil\\.com"
+
+      - type: status
+        status:
+          - 301
+          - 302
+          - 303
+          - 307
+          - 308
+
+---
+id: open-redirect-parameter-pollution
+
+info:
+  name: Open Redirect - Parameter Pollution
+  author: ancarna
+  severity: medium
+  description: Detects open redirect via parameter pollution techniques
+  tags: redirect,phishing,parameter-pollution
+  classification:
+    cwe-id: 601
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        # Double parameter
+        - "safe.com&url=https://evil.com"
+        - "safe.com?url=https://evil.com"
+        # Fragment bypass
+        - "https://evil.com#safe.com"
+        - "https://evil.com?safe.com"
+        # Whitespace bypass
+        - " https://evil.com"
+        - "\thttps://evil.com"
+        - "%20https://evil.com"
+        - "%09https://evil.com"
+    stop-at-first-match: true
+    matchers:
+      - type: regex
+        part: header
+        regex:
+          - "(?i)Location:\\s*.*evil\\.com"

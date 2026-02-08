@@ -3,6 +3,8 @@
 //! Implements functionality similar to Burp Param Miner plugin.
 //! Discovers hidden parameters, headers, and cache poisoning opportunities.
 
+#![allow(dead_code)]
+
 use anyhow::Result;
 use std::time::Duration;
 

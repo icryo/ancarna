@@ -6,6 +6,8 @@
 //! - CSV (spreadsheet-compatible)
 //! - Markdown (documentation-friendly)
 
+#![allow(dead_code)]
+
 pub mod formats;
 
 use crate::scanner::{Finding, Severity};

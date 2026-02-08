@@ -7,6 +7,8 @@
 //! - DNS rebinding preparation
 //! - Blind SSRF detection
 
+#![allow(dead_code)]
+
 use anyhow::Result;
 
 use crate::http::{HttpClient, Request};

@@ -2,6 +2,8 @@
 //!
 //! Provides web crawling capabilities for discovering application structure.
 
+#![allow(dead_code)]
+
 use anyhow::Result;
 use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;

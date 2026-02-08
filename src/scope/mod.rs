@@ -3,6 +3,8 @@
 //! Controls which targets are in-scope for security testing.
 //! Supports URL patterns, domain matching, and IP ranges.
 
+#![allow(dead_code)]
+
 use std::collections::HashSet;
 use std::net::IpAddr;
 use std::str::FromStr;

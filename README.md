@@ -37,19 +37,104 @@ ancarna
 # Press 'C' to install the CA certificate for HTTPS interception
 ```
 
-## Keys
+## Keybindings
+
+### General
 
 | Key | Action |
 |-----|--------|
+| `Ctrl+P` | **Command palette** - search all actions |
 | `1-7` | Switch tabs |
-| `j/k` | Navigate up/down |
-| `Tab` | Cycle focus |
-| `I` | Toggle intercept |
-| `f` | Forward request |
-| `x` | Drop request |
-| `d` | View details |
-| `/` | Filter |
-| `?` | Help |
+| `Tab` | Cycle focus between panels |
+| `?` | Show help dialog |
+| `q` | Quit |
+| `Ctrl+E` | Export report (HTML/JSON/CSV/Markdown) |
+| `Ctrl+t` | New request tab |
+| `Ctrl+w` | Close current tab |
+| `>/<` | Next/previous request tab |
+
+### Navigation
+
+| Key | Action |
+|-----|--------|
+| `j/k` | Move down/up |
+| `h/l` | Move left/right |
+| `g/G` | Go to top/bottom |
+| `Ctrl+d/u` | Half page down/up |
+| `[/]` | Switch sub-tabs |
+
+### Proxy Tab
+
+| Key | Action |
+|-----|--------|
+| `I` | Toggle intercept mode |
+| `f` | Forward intercepted request |
+| `x` | Drop intercepted request |
+| `d` | View request details |
+| `/` | Filter history (`!pattern` to exclude) |
+| `W` | View WebSocket messages |
+| `Ctrl+C` | Install CA certificate |
+
+### Scanner Tab
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Start/stop scan |
+| `e` | Edit scan target URL |
+| `S` | Open scripting panel |
+| `p` | Configure scan policy |
+
+### Request Editor
+
+| Key | Action |
+|-----|--------|
+| `e` | Edit URL |
+| `i` | Edit current field |
+| `o` | Add new row |
+| `d` | Delete row |
+| `Space` | Toggle row enabled |
+| `m` | Cycle HTTP method |
+| `Enter` | Send request |
+| `n` | New request |
+
+### Response Viewer
+
+| Key | Action |
+|-----|--------|
+| `/` | Search in response |
+| `n/N` | Next/previous match |
+| `y` | Copy to clipboard |
+| `r` | Toggle raw/pretty view |
+
+### Import/Export
+
+| Key | Action |
+|-----|--------|
+| `E` | Select environment |
+| `Ctrl+I` | Import from file (Postman/HAR/OpenAPI/cURL) |
+| `I` | Import from clipboard |
+| `C` | Export as cURL |
+| `Ctrl+V` | Paste from clipboard |
+
+### Collections
+
+| Key | Action |
+|-----|--------|
+| `H` | Toggle history panel |
+| `D` | Delete selected item |
+| `R` | Rename selected item |
+
+## Roadmap
+
+### Planned Features
+
+- **Interactsh/OOB Callback Integration** - Out-of-band vulnerability detection using callback servers for blind SSRF, XXE, and other injection detection. Will support custom Interactsh servers and automatic payload generation with correlation IDs.
+
+- **HTTP/2 MITM Support** - Full HTTP/2 proxying for modern web applications
+
+- **Extractors for Templates** - Capture regex groups from responses for evidence collection and chained attacks
+
+- **Custom Template Loading** - Load external Nuclei-compatible templates from disk at runtime
 
 ## License
 

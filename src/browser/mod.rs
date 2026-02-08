@@ -8,6 +8,8 @@
 //! - Host/CIDR scanning for web services
 //! - Interactive carbonyl browser with proxy support
 
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
@@ -23,16 +25,63 @@ use serde::{Deserialize, Serialize};
 pub fn launch_carbonyl(url: &str, proxy_port: u16) -> Result<()> {
     let proxy_url = format!("http://127.0.0.1:{}", proxy_port);
 
-    // Build the carbonyl command string
-    let mut carbonyl_cmd = String::from("carbonyl --no-sandbox");
+    // Build the carbonyl command string with comprehensive anti-bot detection evasion
+    // These flags prevent common bot detection mechanisms from identifying the browser as automated
+    let mut carbonyl_cmd = String::from("carbonyl");
+
+    // Core sandbox/security flags
+    carbonyl_cmd.push_str(" --no-sandbox");
+    carbonyl_cmd.push_str(" --disable-setuid-sandbox");
+    carbonyl_cmd.push_str(" --disable-dev-shm-usage");
+
+    // Anti-automation detection flags (critical for bot evasion)
     carbonyl_cmd.push_str(" --disable-blink-features=AutomationControlled");
+    carbonyl_cmd.push_str(" --disable-features=AutomationControlled");
+    carbonyl_cmd.push_str(" --disable-automation");
+    carbonyl_cmd.push_str(" --disable-infobars");
+
+    // Disable extensions that might reveal automation
+    carbonyl_cmd.push_str(" --disable-extensions");
+    carbonyl_cmd.push_str(" --disable-plugins-discovery");
+    carbonyl_cmd.push_str(" --disable-default-apps");
+
+    // Prevent WebDriver detection via navigator.webdriver
+    carbonyl_cmd.push_str(" --disable-blink-features=AutomationControlled,EnableAutomation");
+
+    // GPU and rendering (some detection looks for headless rendering artifacts)
+    carbonyl_cmd.push_str(" --disable-gpu");
+    carbonyl_cmd.push_str(" --disable-software-rasterizer");
+
+    // Notifications and permissions that might reveal automation
+    carbonyl_cmd.push_str(" --disable-notifications");
+    carbonyl_cmd.push_str(" --disable-popup-blocking");
+
+    // Realistic browser behavior
+    carbonyl_cmd.push_str(" --disable-background-networking");
+    carbonyl_cmd.push_str(" --disable-sync");
+    carbonyl_cmd.push_str(" --disable-translate");
+    carbonyl_cmd.push_str(" --metrics-recording-only");
+    carbonyl_cmd.push_str(" --no-first-run");
+    carbonyl_cmd.push_str(" --safebrowsing-disable-auto-update");
+
+    // Exclude automation switches (important - prevents enable-automation from being added)
+    carbonyl_cmd.push_str(" --disable-ipc-flooding-protection");
+
+    // Web security (needed for some proxy scenarios)
     carbonyl_cmd.push_str(" --disable-web-security");
-    carbonyl_cmd.push_str(" '--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'");
+    carbonyl_cmd.push_str(" --allow-running-insecure-content");
+
+    // Updated user-agent matching current Chrome stable
+    carbonyl_cmd.push_str(" '--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'");
+
+    // Window size (helps avoid headless detection based on viewport)
+    carbonyl_cmd.push_str(" --window-size=1920,1080");
 
     if proxy_port > 0 {
         carbonyl_cmd.push_str(&format!(" --proxy-server={}", proxy_url));
-        carbonyl_cmd.push_str(" --proxy-bypass-list=");
+        carbonyl_cmd.push_str(" --proxy-bypass-list=<-loopback>");
         carbonyl_cmd.push_str(" --ignore-certificate-errors");
+        carbonyl_cmd.push_str(" --ignore-certificate-errors-spki-list");
     }
 
     carbonyl_cmd.push_str(&format!(" '{}'", url));

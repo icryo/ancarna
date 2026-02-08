@@ -7,6 +7,8 @@
 //!
 //! Based on techniques from PortSwigger research and HTTP Request Smuggler extension.
 
+#![allow(dead_code)]
+
 use anyhow::Result;
 use std::time::Duration;
 

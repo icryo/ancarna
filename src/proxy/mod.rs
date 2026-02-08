@@ -7,7 +7,7 @@ mod history;
 mod intercept;
 mod server;
 mod tls;
-mod websocket;
+pub mod websocket;
 
 pub use history::HistoryEntry;
 pub use intercept::{InterceptDecision, InterceptedRequest};

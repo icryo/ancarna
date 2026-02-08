@@ -1,0 +1,238 @@
+id: java-deserialization
+
+info:
+  name: Java Insecure Deserialization
+  author: ancarna
+  severity: critical
+  description: Detects Java deserialization vulnerabilities via common gadget chains
+  tags: deserialization,java,rce,owasp-top10
+  classification:
+    cwe-id: 502
+  reference:
+    - https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/16-Testing_for_HTTP_Incoming_Requests
+    - https://portswigger.net/web-security/deserialization
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}{{path}}"
+    headers:
+      Content-Type: application/x-java-serialized-object
+    body: |
+      {{payload}}
+    payloads:
+      payload:
+        # Java serialized object magic bytes (base64 encoded rO0 prefix detection)
+        # These are detection probes, not exploitation payloads
+        - "rO0ABXNyABFqYXZhLnV0aWwuSGFzaE1hcAUH2sHDFmDRAwACRgAKbG9hZEZhY3RvckkACXRocmVzaG9sZHhwP0AAAAAAAAB3CAAAAAEAAAAAdAAEdGVzdHQABHRlc3R4"
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "java.io.ObjectInputStream"
+          - "ClassNotFoundException"
+          - "java.io.InvalidClassException"
+          - "java.io.StreamCorruptedException"
+          - "java.lang.ClassCastException"
+          - "Gadget"
+          - "ysoserial"
+        case-insensitive: true
+
+      - type: regex
+        part: body
+        regex:
+          - "(?i)java\\..*Exception"
+          - "(?i)org\\.apache\\.commons\\.collections"
+
+---
+id: java-deserialization-detection
+
+info:
+  name: Java Deserialization - Endpoint Detection
+  author: ancarna
+  severity: info
+  description: Detects endpoints that may accept Java serialized objects
+  tags: deserialization,java,detection
+  classification:
+    cwe-id: 502
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}"
+    matchers-condition: or
+    matchers:
+      # Check for Java serialization in responses
+      - type: word
+        part: header
+        words:
+          - "application/x-java-serialized-object"
+          - "application/java-serialized"
+
+      # Check for common Java RMI/JNDI patterns
+      - type: word
+        part: body
+        words:
+          - "javax.naming"
+          - "java.rmi"
+          - "writeObject"
+          - "readObject"
+
+---
+id: php-deserialization
+
+info:
+  name: PHP Insecure Deserialization
+  author: ancarna
+  severity: critical
+  description: Detects PHP deserialization vulnerabilities
+  tags: deserialization,php,rce
+  classification:
+    cwe-id: 502
+  reference:
+    - https://owasp.org/www-community/vulnerabilities/PHP_Object_Injection
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        # PHP serialized object probes
+        - "O:8:\"stdClass\":0:{}"
+        - "a:1:{s:4:\"test\";s:4:\"test\";}"
+        - "O:7:\"Example\":1:{s:4:\"data\";s:4:\"test\";}"
+        # POP chain detection probes
+        - "O:4:\"Test\":1:{s:4:\"file\";s:11:\"/etc/passwd\";}"
+    stop-at-first-match: true
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "unserialize()"
+          - "__wakeup()"
+          - "__destruct()"
+          - "PHP Fatal error"
+          - "Object of class"
+        case-insensitive: true
+
+      - type: regex
+        part: body
+        regex:
+          - "root:.*:0:0:"
+          - "(?i)unserialize.*failed"
+
+---
+id: python-pickle-deserialization
+
+info:
+  name: Python Pickle Deserialization
+  author: ancarna
+  severity: critical
+  description: Detects Python pickle deserialization vulnerabilities
+  tags: deserialization,python,pickle,rce
+  classification:
+    cwe-id: 502
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}{{path}}"
+    headers:
+      Content-Type: application/octet-stream
+    body: |
+      {{payload}}
+    payloads:
+      payload:
+        # Python pickle probe (base64 of a simple pickle)
+        - "gASVEgAAAAAAAACMCGJ1aWx0aW5zlIwEZXZhbJSTlIwCaWSUhZRSlC4="
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "pickle"
+          - "UnpicklingError"
+          - "cPickle"
+          - "_pickle"
+        case-insensitive: true
+
+      - type: regex
+        part: body
+        regex:
+          - "(?i)pickle\\.(loads?|Unpickler)"
+
+---
+id: dotnet-deserialization
+
+info:
+  name: .NET Insecure Deserialization
+  author: ancarna
+  severity: critical
+  description: Detects .NET deserialization vulnerabilities (BinaryFormatter, ObjectStateFormatter, etc.)
+  tags: deserialization,dotnet,csharp,rce
+  classification:
+    cwe-id: 502
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}{{path}}"
+    headers:
+      Content-Type: application/x-ms-application
+    body: |
+      {{payload}}
+    payloads:
+      payload:
+        # .NET BinaryFormatter magic bytes probe
+        - "AAEAAAD/////AQAAAAAAAAAEAQAAAA=="
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "BinaryFormatter"
+          - "ObjectStateFormatter"
+          - "LosFormatter"
+          - "NetDataContractSerializer"
+          - "SoapFormatter"
+          - "System.Runtime.Serialization"
+        case-insensitive: true
+
+      - type: regex
+        part: body
+        regex:
+          - "(?i)System\\.Runtime\\.Serialization\\..*Exception"
+
+---
+id: viewstate-deserialization
+
+info:
+  name: ASP.NET ViewState Deserialization
+  author: ancarna
+  severity: high
+  description: Detects insecure ASP.NET ViewState configurations
+  tags: deserialization,dotnet,viewstate,aspnet
+  classification:
+    cwe-id: 502
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+      - "{{BaseURL}}/default.aspx"
+      - "{{BaseURL}}/login.aspx"
+    matchers-condition: and
+    matchers:
+      - type: regex
+        part: body
+        regex:
+          - "__VIEWSTATE.*value=\"[A-Za-z0-9+/=]+"
+
+      - type: word
+        part: body
+        words:
+          - "__VIEWSTATEGENERATOR"
+        negative: true

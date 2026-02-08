@@ -1,5 +1,7 @@
 //! Terminal setup and teardown
 
+#![allow(dead_code)]
+
 use anyhow::{bail, Result};
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},

@@ -9,4 +9,4 @@ mod state;
 
 pub use config::{Config, ProxyConfig};
 pub use events::AppEvent;
-pub use state::{App, ApiKeyLocation, AppMode, AppState, AuthType, BodyContentType, CollectionItemType, Focus, FuzzerFocus, FuzzerSortBy, MainTab, ProxyDetailsTab, RequestEditorTab, ResponseTab, SettingsSection, SpiderFocus};
+pub use state::{App, ApiKeyLocation, AppMode, AppState, AuthType, BodyContentType, CollectionItemType, Focus, FuzzerFocus, FuzzerPayloadSet, FuzzerSortBy, MainTab, ProxyDetailsTab, RequestEditorTab, RequestTabs, ResponseTab, SettingsSection, SpiderFocus};

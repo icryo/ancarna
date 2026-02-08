@@ -1,5 +1,7 @@
 //! Response viewer widget
 
+#![allow(dead_code)]
+
 use ratatui::{
     layout::Rect,
     style::Style,

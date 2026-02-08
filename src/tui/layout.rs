@@ -1,20 +1,46 @@
 //! Layout utilities for the TUI
 
+#![allow(dead_code)]
+
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 /// Layout presets for different views
 pub struct Layouts;
 
 impl Layouts {
-    /// Three-column workspace layout
+    /// Adaptive three-column workspace layout based on terminal width
+    /// Returns constraints for [Collections, Request, Response]
+    pub fn workspace_constraints(width: u16) -> [Constraint; 3] {
+        if width >= 120 {
+            // Wide: give collections more room
+            [
+                Constraint::Percentage(25),
+                Constraint::Percentage(38),
+                Constraint::Percentage(37),
+            ]
+        } else if width >= 100 {
+            // Medium: balanced
+            [
+                Constraint::Percentage(28),
+                Constraint::Percentage(36),
+                Constraint::Percentage(36),
+            ]
+        } else {
+            // Compact: collections gets 30% for better readability
+            [
+                Constraint::Percentage(30),
+                Constraint::Percentage(35),
+                Constraint::Percentage(35),
+            ]
+        }
+    }
+
+    /// Three-column workspace layout (adaptive)
     pub fn workspace(area: Rect) -> Vec<Rect> {
+        let constraints = Self::workspace_constraints(area.width);
         Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(20),
-                Constraint::Percentage(40),
-                Constraint::Percentage(40),
-            ])
+            .constraints(constraints)
             .split(area)
             .to_vec()
     }

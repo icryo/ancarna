@@ -1,0 +1,209 @@
+id: host-header-injection
+
+info:
+  name: Host Header Injection
+  author: ancarna
+  severity: medium
+  description: Detects Host header injection vulnerabilities
+  tags: host-header,injection,cache-poisoning
+  classification:
+    cwe-id: 644
+  reference:
+    - https://portswigger.net/web-security/host-header
+    - https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/17-Testing_for_HTTP_Incoming_Requests
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    headers:
+      Host: "evil-host.com"
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "evil-host.com"
+
+      - type: regex
+        part: body
+        regex:
+          - "https?://evil-host\\.com"
+
+---
+id: host-header-injection-x-forwarded
+
+info:
+  name: Host Header Injection - X-Forwarded-Host
+  author: ancarna
+  severity: medium
+  description: Detects Host header injection via X-Forwarded-Host
+  tags: host-header,injection,x-forwarded
+  classification:
+    cwe-id: 644
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    headers:
+      X-Forwarded-Host: "evil-forwarded.com"
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "evil-forwarded.com"
+
+      - type: regex
+        part: body
+        regex:
+          - "https?://evil-forwarded\\.com"
+
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    headers:
+      X-Host: "evil-xhost.com"
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "evil-xhost.com"
+
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    headers:
+      X-Forwarded-Server: "evil-server.com"
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "evil-server.com"
+
+---
+id: host-header-password-reset-poisoning
+
+info:
+  name: Host Header - Password Reset Poisoning
+  author: ancarna
+  severity: high
+  description: Detects password reset poisoning via Host header injection
+  tags: host-header,password-reset,poisoning
+  classification:
+    cwe-id: 644
+  reference:
+    - https://portswigger.net/web-security/host-header/exploiting/password-reset-poisoning
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}/forgot-password"
+      - "{{BaseURL}}/password-reset"
+      - "{{BaseURL}}/reset-password"
+      - "{{BaseURL}}/api/forgot-password"
+      - "{{BaseURL}}/api/password/reset"
+      - "{{BaseURL}}/account/forgot"
+    headers:
+      Host: "evil-reset.com"
+      Content-Type: application/x-www-form-urlencoded
+    body: "email=test@example.com"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+          - 302
+
+      - type: word
+        part: body
+        words:
+          - "reset"
+          - "email"
+          - "sent"
+          - "check"
+        case-insensitive: true
+        condition: or
+
+---
+id: host-header-cache-poisoning
+
+info:
+  name: Host Header - Web Cache Poisoning
+  author: ancarna
+  severity: high
+  description: Detects web cache poisoning via Host header manipulation
+  tags: host-header,cache-poisoning,web-cache
+  classification:
+    cwe-id: 644
+  reference:
+    - https://portswigger.net/web-security/web-cache-poisoning
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/static/main.js"
+      - "{{BaseURL}}/assets/app.js"
+      - "{{BaseURL}}/js/bundle.js"
+      - "{{BaseURL}}/css/style.css"
+    headers:
+      Host: "{{Hostname}}"
+      X-Forwarded-Host: "evil-cache.com"
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "X-Cache: HIT"
+          - "CF-Cache-Status: HIT"
+          - "Age:"
+        condition: or
+
+      - type: word
+        part: body
+        words:
+          - "evil-cache.com"
+
+---
+id: host-header-ssrf
+
+info:
+  name: Host Header - SSRF via Routing
+  author: ancarna
+  severity: high
+  description: Detects SSRF via Host header manipulation affecting backend routing
+  tags: host-header,ssrf
+  classification:
+    cwe-id: 918
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    headers:
+      Host: "127.0.0.1"
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "localhost"
+          - "127.0.0.1"
+          - "internal"
+          - "admin"
+        condition: or
+
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    headers:
+      Host: "169.254.169.254"
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "ami-id"
+          - "instance-id"
+          - "security-credentials"
+        condition: or

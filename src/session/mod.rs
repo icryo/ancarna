@@ -3,6 +3,8 @@
 //! Saves and restores application state between sessions.
 //! Supports saving request history, proxy history, collections, and settings.
 
+#![allow(dead_code)]
+
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};

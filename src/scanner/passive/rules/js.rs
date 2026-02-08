@@ -160,8 +160,13 @@ mod tests {
             status_text: "OK".to_string(),
             headers,
             body: body.as_bytes().to_vec(),
-            duration_ms: Some(100),
+            duration_ms: 100,
+            size: body.len(),
+            http_version: "HTTP/1.1".to_string(),
             remote_addr: None,
+            tls_info: None,
+            timing: None,
+            cookies: Vec::new(),
         }
     }
 

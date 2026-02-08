@@ -7,6 +7,8 @@
 //! - Parameter entity injection
 //! - DTD based XXE
 
+#![allow(dead_code)]
+
 use anyhow::Result;
 
 use crate::http::{HttpClient, Request};

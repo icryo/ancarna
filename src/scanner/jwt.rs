@@ -3,6 +3,8 @@
 //! Implements functionality similar to Burp JWT Attacker plugin.
 //! Supports decoding, verification, and common attack techniques.
 
+#![allow(dead_code)]
+
 use anyhow::{Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde::{Deserialize, Serialize};

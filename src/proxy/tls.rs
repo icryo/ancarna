@@ -1,5 +1,7 @@
 //! TLS certificate handling for HTTPS interception
 
+#![allow(dead_code)]
+
 use anyhow::{Context, Result};
 use rcgen::{
     BasicConstraints, Certificate, CertificateParams, DistinguishedName, DnType, IsCa,

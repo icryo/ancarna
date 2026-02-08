@@ -5,6 +5,8 @@
 //! - Retire.js (detect vulnerable JS libraries)
 //! - SecretFinder (detect secrets/API keys in JS)
 
+#![allow(dead_code)]
+
 use anyhow::Result;
 use regex::Regex;
 use std::collections::{HashMap, HashSet};

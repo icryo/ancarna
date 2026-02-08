@@ -3,6 +3,8 @@
 //! Provides scripting capabilities for pre/post request scripts
 //! and custom automation.
 
+#![allow(dead_code)]
+
 use anyhow::Result;
 use boa_engine::{Context as JsContext, JsValue, Source};
 use std::collections::HashMap;

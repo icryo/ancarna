@@ -250,3 +250,114 @@ pub struct FuzzResultStats {
     pub average_response_length: usize,
     pub status_distribution: HashMap<u16, usize>,
 }
+
+/// Export format for fuzzer results
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportFormat {
+    Csv,
+    Json,
+    JsonPretty,
+}
+
+impl FuzzResultSet {
+    /// Export results to JSON
+    pub fn export_json(&self, pretty: bool) -> Result<String, String> {
+        if pretty {
+            serde_json::to_string_pretty(&self.results)
+                .map_err(|e| format!("Failed to serialize to JSON: {}", e))
+        } else {
+            serde_json::to_string(&self.results)
+                .map_err(|e| format!("Failed to serialize to JSON: {}", e))
+        }
+    }
+
+    /// Export results to CSV
+    pub fn export_csv(&self) -> String {
+        let mut csv = String::new();
+
+        // Header
+        csv.push_str("Request #,Payload(s),Position(s),Status,Length,Time (ms),Interesting,Reason,Error\n");
+
+        for result in &self.results {
+            let payloads = result.payloads.join("; ");
+            let positions = result.positions.join("; ");
+            let time_ms = result.response_time.as_millis();
+            let reason = result.interesting_reason.as_deref().unwrap_or("");
+            let error = result.error.as_deref().unwrap_or("");
+
+            // Escape fields that might contain commas or quotes
+            let payloads_escaped = escape_csv_field(&payloads);
+            let positions_escaped = escape_csv_field(&positions);
+            let reason_escaped = escape_csv_field(reason);
+            let error_escaped = escape_csv_field(error);
+
+            csv.push_str(&format!(
+                "{},{},{},{},{},{},{},{},{}\n",
+                result.request_num,
+                payloads_escaped,
+                positions_escaped,
+                result.status_code,
+                result.response_length,
+                time_ms,
+                result.interesting,
+                reason_escaped,
+                error_escaped,
+            ));
+        }
+
+        csv
+    }
+
+    /// Export to file with specified format
+    pub fn export_to_file(&self, path: &std::path::Path, format: ExportFormat) -> Result<(), String> {
+        let content = match format {
+            ExportFormat::Csv => self.export_csv(),
+            ExportFormat::Json => self.export_json(false)?,
+            ExportFormat::JsonPretty => self.export_json(true)?,
+        };
+
+        std::fs::write(path, content)
+            .map_err(|e| format!("Failed to write file: {}", e))
+    }
+
+    /// Export interesting results only
+    pub fn export_interesting_csv(&self) -> String {
+        let mut csv = String::new();
+
+        // Header
+        csv.push_str("Request #,Payload(s),Position(s),Status,Length,Time (ms),Reason\n");
+
+        for result in self.results.iter().filter(|r| r.interesting) {
+            let payloads = result.payloads.join("; ");
+            let positions = result.positions.join("; ");
+            let time_ms = result.response_time.as_millis();
+            let reason = result.interesting_reason.as_deref().unwrap_or("");
+
+            let payloads_escaped = escape_csv_field(&payloads);
+            let positions_escaped = escape_csv_field(&positions);
+            let reason_escaped = escape_csv_field(reason);
+
+            csv.push_str(&format!(
+                "{},{},{},{},{},{},{}\n",
+                result.request_num,
+                payloads_escaped,
+                positions_escaped,
+                result.status_code,
+                result.response_length,
+                time_ms,
+                reason_escaped,
+            ));
+        }
+
+        csv
+    }
+}
+
+/// Escape a field for CSV (quote if contains comma, quote, or newline)
+fn escape_csv_field(field: &str) -> String {
+    if field.contains(',') || field.contains('"') || field.contains('\n') {
+        format!("\"{}\"", field.replace('"', "\"\""))
+    } else {
+        field.to_string()
+    }
+}

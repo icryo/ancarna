@@ -1,5 +1,7 @@
 //! Command Injection testing
 
+#![allow(dead_code)]
+
 use anyhow::Result;
 
 use crate::http::{HttpClient, Request};

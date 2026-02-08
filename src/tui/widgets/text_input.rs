@@ -1,5 +1,7 @@
 //! Text input widget with cursor, selection, and editing support
 
+#![allow(dead_code)]
+
 use ratatui::{
     buffer::Buffer,
     layout::Rect,

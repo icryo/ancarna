@@ -1,5 +1,7 @@
 //! Application configuration management
 
+#![allow(dead_code)]
+
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -92,6 +94,9 @@ pub struct ScannerConfig {
 
     /// User agent string
     pub user_agent: String,
+
+    /// Custom templates directory (Nuclei-compatible YAML templates)
+    pub templates_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -163,6 +168,7 @@ impl Default for ScannerConfig {
             max_redirects: 10,
             default_policy: "default".to_string(),
             user_agent: format!("Ancarna/{}", env!("CARGO_PKG_VERSION")),
+            templates_dir: None,
         }
     }
 }

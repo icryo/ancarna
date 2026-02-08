@@ -1,5 +1,7 @@
 //! Proxy request/response history
 
+#![allow(dead_code)]
+
 use chrono::{DateTime, Utc};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};

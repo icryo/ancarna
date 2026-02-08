@@ -1,5 +1,7 @@
 //! Key-value editor widget for headers, params, form data
 
+#![allow(dead_code)]
+
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
