@@ -7,6 +7,7 @@
 //! - Default credentials detection
 //! - Host/CIDR scanning for web services
 //! - Interactive carbonyl browser with proxy support
+//! - Proxy-level stealth JS injection to bypass bot detection
 
 #![allow(dead_code)]
 
@@ -25,63 +26,43 @@ use serde::{Deserialize, Serialize};
 pub fn launch_carbonyl(url: &str, proxy_port: u16) -> Result<()> {
     let proxy_url = format!("http://127.0.0.1:{}", proxy_port);
 
-    // Build the carbonyl command string with comprehensive anti-bot detection evasion
-    // These flags prevent common bot detection mechanisms from identifying the browser as automated
+    // Build the carbonyl command with minimal, targeted anti-bot flags.
+    //
+    // IMPORTANT: More flags is NOT better. Many "anti-detection" flags actually
+    // make detection EASIER by creating a distinctive fingerprint:
+    //   - --disable-gpu/--disable-software-rasterizer → breaks WebGL, strong headless signal
+    //   - --disable-extensions → no extensions is detectable via navigator.plugins
+    //   - --disable-automation → paradoxically enables navigator.webdriver in some versions
+    //   - Duplicate --disable-blink-features → second flag can override the first
+    //   - Old user-agent (Chrome/122) → 2-year-old version flagged by every bot detector
+    //
+    // We use only what's proven to work: hide webdriver property, realistic UA, sandbox off.
     let mut carbonyl_cmd = String::from("carbonyl");
 
-    // Core sandbox/security flags
+    // Sandbox flags (required for containerized/root environments)
     carbonyl_cmd.push_str(" --no-sandbox");
     carbonyl_cmd.push_str(" --disable-setuid-sandbox");
     carbonyl_cmd.push_str(" --disable-dev-shm-usage");
 
-    // Anti-automation detection flags (critical for bot evasion)
+    // Hide navigator.webdriver — the single most important anti-detection flag
     carbonyl_cmd.push_str(" --disable-blink-features=AutomationControlled");
-    carbonyl_cmd.push_str(" --disable-features=AutomationControlled");
-    carbonyl_cmd.push_str(" --disable-automation");
+
+    // Suppress automation infobars
     carbonyl_cmd.push_str(" --disable-infobars");
-
-    // Disable extensions that might reveal automation
-    carbonyl_cmd.push_str(" --disable-extensions");
-    carbonyl_cmd.push_str(" --disable-plugins-discovery");
-    carbonyl_cmd.push_str(" --disable-default-apps");
-
-    // Prevent WebDriver detection via navigator.webdriver
-    carbonyl_cmd.push_str(" --disable-blink-features=AutomationControlled,EnableAutomation");
-
-    // GPU and rendering (some detection looks for headless rendering artifacts)
-    carbonyl_cmd.push_str(" --disable-gpu");
-    carbonyl_cmd.push_str(" --disable-software-rasterizer");
-
-    // Notifications and permissions that might reveal automation
-    carbonyl_cmd.push_str(" --disable-notifications");
-    carbonyl_cmd.push_str(" --disable-popup-blocking");
-
-    // Realistic browser behavior
-    carbonyl_cmd.push_str(" --disable-background-networking");
-    carbonyl_cmd.push_str(" --disable-sync");
-    carbonyl_cmd.push_str(" --disable-translate");
-    carbonyl_cmd.push_str(" --metrics-recording-only");
     carbonyl_cmd.push_str(" --no-first-run");
-    carbonyl_cmd.push_str(" --safebrowsing-disable-auto-update");
 
-    // Exclude automation switches (important - prevents enable-automation from being added)
-    carbonyl_cmd.push_str(" --disable-ipc-flooding-protection");
-
-    // Web security (needed for some proxy scenarios)
+    // Web security (needed for MITM proxy with self-signed certs)
     carbonyl_cmd.push_str(" --disable-web-security");
     carbonyl_cmd.push_str(" --allow-running-insecure-content");
 
-    // Updated user-agent matching current Chrome stable
-    carbonyl_cmd.push_str(" '--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'");
-
-    // Window size (helps avoid headless detection based on viewport)
+    // Realistic viewport and user-agent (must match a recent Chrome release)
     carbonyl_cmd.push_str(" --window-size=1920,1080");
+    carbonyl_cmd.push_str(" '--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'");
 
     if proxy_port > 0 {
         carbonyl_cmd.push_str(&format!(" --proxy-server={}", proxy_url));
         carbonyl_cmd.push_str(" --proxy-bypass-list=<-loopback>");
         carbonyl_cmd.push_str(" --ignore-certificate-errors");
-        carbonyl_cmd.push_str(" --ignore-certificate-errors-spki-list");
     }
 
     carbonyl_cmd.push_str(&format!(" '{}'", url));
@@ -123,6 +104,121 @@ pub fn carbonyl_available() -> bool {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+/// JavaScript injected into HTML responses by the MITM proxy to defeat bot detection.
+///
+/// Three-layer stealth approach:
+/// 1. Override `navigator.webdriver` to return `undefined`
+/// 2. Populate `navigator.plugins` with realistic Chrome entries
+/// 3. Stub `window.chrome.runtime` and patch `navigator.permissions.query`
+pub const STEALTH_JS: &str = r#"<script data-ancarna="stealth">
+(function(){
+  // Layer 1: Hide navigator.webdriver (main detection vector for Cloudflare/DataDome)
+  Object.defineProperty(navigator, 'webdriver', {
+    get: function(){ return undefined; },
+    configurable: true
+  });
+
+  // Layer 2: Populate navigator.plugins (empty plugins array = headless signal)
+  if (navigator.plugins.length === 0) {
+    var pluginData = [
+      {name:'PDF Viewer',filename:'internal-pdf-viewer',description:'Portable Document Format'},
+      {name:'Chrome PDF Viewer',filename:'internal-pdf-viewer',description:'Portable Document Format'},
+      {name:'Chromium PDF Viewer',filename:'internal-pdf-viewer',description:'Portable Document Format'},
+      {name:'Microsoft Edge PDF Viewer',filename:'internal-pdf-viewer',description:'Portable Document Format'},
+      {name:'WebKit built-in PDF',filename:'internal-pdf-viewer',description:'Portable Document Format'}
+    ];
+    Object.defineProperty(navigator, 'plugins', {
+      get: function(){
+        var arr = pluginData.map(function(p){
+          var plugin = Object.create(Plugin.prototype);
+          Object.defineProperties(plugin, {
+            name: {value: p.name}, filename: {value: p.filename}, description: {value: p.description}, length: {value: 1}
+          });
+          return plugin;
+        });
+        arr.item = function(i){ return this[i] || null; };
+        arr.namedItem = function(n){ return this.find(function(p){ return p.name === n; }) || null; };
+        arr.refresh = function(){};
+        return arr;
+      },
+      configurable: true
+    });
+  }
+
+  // Layer 3: Set realistic navigator.languages
+  Object.defineProperty(navigator, 'languages', {
+    get: function(){ return ['en-US','en']; },
+    configurable: true
+  });
+
+  // Layer 4: Stub window.chrome.runtime (missing = headless signal)
+  if (!window.chrome) { window.chrome = {}; }
+  if (!window.chrome.runtime) {
+    window.chrome.runtime = {
+      connect: function(){ return {onMessage:{addListener:function(){}},postMessage:function(){},disconnect:function(){}}; },
+      sendMessage: function(msg, cb){ if(cb) cb(); },
+      OnInstalledReason: {INSTALL:'install',UPDATE:'update',CHROME_UPDATE:'chrome_update',SHARED_MODULE_UPDATE:'shared_module_update'},
+      PlatformOs: {MAC:'mac',WIN:'win',ANDROID:'android',CROS:'cros',LINUX:'linux',OPENBSD:'openbsd'},
+      PlatformArch: {ARM:'arm',X86_32:'x86-32',X86_64:'x86-64',MIPS:'mips',MIPS64:'mips64'},
+      RequestUpdateCheckStatus: {THROTTLED:'throttled',NO_UPDATE:'no_update',UPDATE_AVAILABLE:'update_available'}
+    };
+  }
+
+  // Layer 5: Patch permissions.query for consistent notification behavior
+  var origQuery = navigator.permissions && navigator.permissions.query;
+  if (origQuery) {
+    navigator.permissions.query = function(desc){
+      if (desc && desc.name === 'notifications') {
+        return Promise.resolve({state: Notification.permission, onchange: null});
+      }
+      return origQuery.call(navigator.permissions, desc);
+    };
+  }
+})();
+</script>"#;
+
+/// Inject stealth JavaScript into an HTML response body.
+///
+/// Inserts the stealth script right after `<head>` (or after `<html>` if no head tag).
+/// Returns None if the body is not valid UTF-8 or doesn't look like HTML.
+pub fn inject_stealth_js(body: &[u8]) -> Option<Vec<u8>> {
+    let text = std::str::from_utf8(body).ok()?;
+
+    // Skip if already injected
+    if text.contains("data-ancarna=\"stealth\"") {
+        return None;
+    }
+
+    // Try inserting after <head...>
+    if let Some(pos) = find_tag_end(text, "<head") {
+        let mut result = String::with_capacity(text.len() + STEALTH_JS.len());
+        result.push_str(&text[..pos]);
+        result.push_str(STEALTH_JS);
+        result.push_str(&text[pos..]);
+        return Some(result.into_bytes());
+    }
+
+    // Fallback: insert after <html...>
+    if let Some(pos) = find_tag_end(text, "<html") {
+        let mut result = String::with_capacity(text.len() + STEALTH_JS.len());
+        result.push_str(&text[..pos]);
+        result.push_str(STEALTH_JS);
+        result.push_str(&text[pos..]);
+        return Some(result.into_bytes());
+    }
+
+    None
+}
+
+/// Find the end of an HTML opening tag (position after the closing `>`).
+fn find_tag_end(html: &str, tag_prefix: &str) -> Option<usize> {
+    let lower = html.to_lowercase();
+    let start = lower.find(tag_prefix)?;
+    let rest = &lower[start..];
+    let close = rest.find('>')?;
+    Some(start + close + 1)
 }
 
 /// Common web ports to scan
@@ -751,5 +847,44 @@ mod tests {
     fn test_expand_cidr() {
         let hosts = ReconManager::expand_cidr("192.168.1.0/30");
         assert_eq!(hosts.len(), 2); // .1 and .2 (network and broadcast excluded)
+    }
+
+    #[test]
+    fn test_inject_stealth_js_into_head() {
+        let html = b"<html><head><title>Test</title></head><body>Hello</body></html>";
+        let result = inject_stealth_js(html).unwrap();
+        let text = String::from_utf8(result).unwrap();
+        assert!(text.contains("data-ancarna=\"stealth\""));
+        assert!(text.contains("navigator.webdriver"));
+        // Script should appear after <head>
+        let head_pos = text.find("<head>").unwrap();
+        let script_pos = text.find("data-ancarna").unwrap();
+        assert!(script_pos > head_pos);
+    }
+
+    #[test]
+    fn test_inject_stealth_js_no_head() {
+        let html = b"<html><body>Hello</body></html>";
+        let result = inject_stealth_js(html).unwrap();
+        let text = String::from_utf8(result).unwrap();
+        assert!(text.contains("data-ancarna=\"stealth\""));
+        // Script should appear after <html>
+        let html_pos = text.find("<html>").unwrap();
+        let script_pos = text.find("data-ancarna").unwrap();
+        assert!(script_pos > html_pos);
+    }
+
+    #[test]
+    fn test_inject_stealth_js_not_html() {
+        let json = b"{\"key\": \"value\"}";
+        assert!(inject_stealth_js(json).is_none());
+    }
+
+    #[test]
+    fn test_inject_stealth_js_idempotent() {
+        let html = b"<html><head><title>Test</title></head><body>Hello</body></html>";
+        let first = inject_stealth_js(html).unwrap();
+        // Second injection should return None (already injected)
+        assert!(inject_stealth_js(&first).is_none());
     }
 }

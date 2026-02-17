@@ -2529,6 +2529,11 @@ fn render_browser_view(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) 
             Span::styled("✓ ", Style::default().fg(theme.success)),
             Span::styled("Traffic routed through ancarna proxy", Style::default().fg(theme.fg)),
         ]),
+        Line::from(vec![
+            Span::raw("    "),
+            Span::styled("✓ ", Style::default().fg(theme.success)),
+            Span::styled("Anti-detection JS injected via proxy", Style::default().fg(theme.fg)),
+        ]),
         Line::from(""),
         Line::from(vec![
             Span::styled("  Press ", Style::default().fg(theme.muted)),

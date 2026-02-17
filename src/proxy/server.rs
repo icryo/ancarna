@@ -309,7 +309,14 @@ async fn handle_connect(
     }
 }
 
-/// Create a TLS connection to the target server
+/// Create a TLS connection to the target server.
+///
+/// Uses the default rustls config — intentionally no attempt to mimic Chrome's
+/// JA3/JA4 fingerprint. A clearly non-browser TLS fingerprint is LESS suspicious
+/// than a half-matching one. Bot detection systems specifically flag "almost Chrome"
+/// fingerprints as proxy/scraper evasion attempts. The default rustls fingerprint
+/// is seen as a generic TLS client (CDN edge, API consumer, etc.) and typically
+/// passes without issue.
 async fn connect_to_target(
     host: &str,
     port: u16,
@@ -355,9 +362,6 @@ async fn handle_tls_traffic(
 
     let (read_half, mut write_half) = tokio::io::split(stream);
     let mut reader = BufReader::new(read_half);
-
-    // Reusable connection to target server (lazily created)
-    let mut target_stream: Option<tokio_rustls::client::TlsStream<tokio::net::TcpStream>> = None;
 
     loop {
         tracing::info!("Proxy: waiting for HTTPS request from client");
@@ -515,15 +519,11 @@ async fn handle_tls_traffic(
             continue;
         }
 
-        // Forward to target server - reuse connection if available
-        if target_stream.is_none() {
-            tracing::info!("Proxy: creating new connection to {}:{}", host, port);
-            target_stream = Some(connect_to_target(host, port).await?);
-        } else {
-            tracing::debug!("Proxy: reusing existing connection to {}:{}", host, port);
-        }
-
-        let stream = target_stream.as_mut().unwrap();
+        // Forward to target server - fresh connection per request to avoid
+        // BufReader data loss on connection reuse (buffered bytes from the previous
+        // response would be silently dropped, corrupting the next response parse)
+        tracing::info!("Proxy: connecting to {}:{}", host, port);
+        let mut target_stream = connect_to_target(host, port).await?;
 
         // Start timing before sending request
         let request_start = std::time::Instant::now();
@@ -542,6 +542,11 @@ async fn handle_tls_traffic(
         if headers_modified {
             // Use modified headers (lowercase keys from intercept)
             for (key, value) in &final_headers {
+                // Strip Accept-Encoding so server sends uncompressed HTML
+                // (required for stealth JS injection into response body)
+                if key == "accept-encoding" {
+                    continue;
+                }
                 request_bytes.push_str(&format!("{}: {}\r\n", key, value));
             }
         } else {
@@ -556,18 +561,23 @@ async fn handle_tls_traffic(
                 {
                     continue;
                 }
+                // Strip Accept-Encoding so server sends uncompressed HTML
+                // (required for stealth JS injection into response body)
+                if header_lower.starts_with("accept-encoding:") {
+                    continue;
+                }
                 request_bytes.push_str(header_line);
             }
         }
         request_bytes.push_str("\r\n");
-        stream.write_all(request_bytes.as_bytes()).await?;
+        target_stream.write_all(request_bytes.as_bytes()).await?;
         if !final_body.is_empty() {
-            stream.write_all(&final_body).await?;
+            target_stream.write_all(&final_body).await?;
         }
 
         // Read response
         tracing::info!("Proxy: reading response from target");
-        let mut response_reader = BufReader::new(&mut *stream);
+        let mut response_reader = BufReader::new(&mut target_stream);
         let mut status_line = String::new();
         response_reader.read_line(&mut status_line).await?;
         tracing::info!("Proxy: target response: {}", status_line.trim());
@@ -708,6 +718,20 @@ async fn handle_tls_traffic(
             }
         }
 
+        // Inject stealth JS into HTML responses to bypass bot detection
+        {
+            let is_html = final_response_headers
+                .get("content-type")
+                .map(|ct| ct.contains("text/html"))
+                .unwrap_or(false);
+            if is_html {
+                if let Some(patched) = crate::browser::inject_stealth_js(&final_response_body) {
+                    tracing::debug!("Stealth: injected anti-detection JS into HTML response for {}", url);
+                    final_response_body = patched;
+                }
+            }
+        }
+
         // If response should be dropped, send error to client
         if should_drop_response {
             let error_response = "HTTP/1.1 444 Blocked by Proxy\r\nContent-Length: 28\r\nConnection: close\r\n\r\nResponse blocked by proxy.\r\n";
@@ -727,6 +751,10 @@ async fn handle_tls_traffic(
             if key == "content-length" {
                 continue;
             }
+            // Strip CSP headers that would block our injected stealth script
+            if key == "content-security-policy" || key == "content-security-policy-report-only" {
+                continue;
+            }
             write_half
                 .write_all(format!("{}: {}\r\n", key, value).as_bytes())
                 .await?;
@@ -739,17 +767,6 @@ async fn handle_tls_traffic(
         write_half.write_all(&final_response_body).await?;
         write_half.flush().await?;
         tracing::info!("Proxy: response forwarded successfully");
-
-        // Check if server wants to close the connection
-        let server_wants_close = response_headers
-            .get("connection")
-            .map(|v| v.to_lowercase().contains("close"))
-            .unwrap_or(false);
-
-        if server_wants_close {
-            tracing::debug!("Proxy: server sent Connection: close, will create new connection for next request");
-            target_stream = None;
-        }
     }
 
     Ok(())
@@ -834,6 +851,10 @@ async fn handle_http_request(
         {
             continue;
         }
+        // Strip Accept-Encoding so server sends uncompressed HTML
+        if header_lower.starts_with("accept-encoding:") {
+            continue;
+        }
         request.push_str(header);
     }
     // Use Connection: close to simplify response reading while keeping HTTP/1.1
@@ -880,12 +901,60 @@ async fn handle_http_request(
         }
     }
 
+    // Inject stealth JS into HTML responses to bypass bot detection
+    let mut final_response = response;
+    {
+        let response_text = String::from_utf8_lossy(&final_response);
+        let is_html = response_text
+            .lines()
+            .take(20) // Only scan headers
+            .any(|line| {
+                let lower = line.to_lowercase();
+                lower.starts_with("content-type:") && lower.contains("text/html")
+            });
+        if is_html {
+            if let Some(split_pos) = find_header_body_split(&final_response) {
+                let headers_part = &final_response[..split_pos + 4];
+                let body_part = &final_response[split_pos + 4..];
+                if let Some(patched_body) = crate::browser::inject_stealth_js(body_part) {
+                    tracing::debug!("Stealth: injected anti-detection JS into HTTP HTML response for {}", target);
+                    let mut new_response = Vec::with_capacity(headers_part.len() + patched_body.len());
+                    let headers_str = String::from_utf8_lossy(headers_part);
+                    for line in headers_str.split("\r\n") {
+                        if line.is_empty() {
+                            continue;
+                        }
+                        let lower = line.to_lowercase();
+                        if lower.starts_with("content-length:") {
+                            continue;
+                        }
+                        // Strip CSP headers that would block our injected stealth script
+                        if lower.starts_with("content-security-policy:") || lower.starts_with("content-security-policy-report-only:") {
+                            continue;
+                        }
+                        new_response.extend_from_slice(line.as_bytes());
+                        new_response.extend_from_slice(b"\r\n");
+                    }
+                    new_response.extend_from_slice(format!("content-length: {}\r\n", patched_body.len()).as_bytes());
+                    new_response.extend_from_slice(b"\r\n");
+                    new_response.extend_from_slice(&patched_body);
+                    final_response = new_response;
+                }
+            }
+        }
+    }
+
     // Send response to client
-    tracing::info!("Proxy: sending {} byte response (status {})", response.len(), status_code);
-    stream.write_all(&response).await?;
+    tracing::info!("Proxy: sending {} byte response (status {})", final_response.len(), status_code);
+    stream.write_all(&final_response).await?;
     tracing::info!("Proxy: request complete");
 
     Ok(())
+}
+
+/// Find the position of \r\n\r\n that separates HTTP headers from body
+fn find_header_body_split(data: &[u8]) -> Option<usize> {
+    data.windows(4).position(|w| w == b"\r\n\r\n")
 }
 
 /// Handle WebSocket proxy connection with full MITM support
